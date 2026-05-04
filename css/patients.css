@@ -1,0 +1,1 @@
+/* Patients Page */ .check-item{display:flex;align-items:center;gap:8px;font-size:.85rem;padding:6px 0;cursor:pointer;} .check-item input{accent-color:var(--primary-light);}

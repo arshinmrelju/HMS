@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pharmacy & Billing – Wellness Medicals HMS</title>
+  <link rel="icon" type="image/jpeg" href="assets/hms-logo.jpg">
+  <meta name="description" content="Pharmacy inventory and billing management for Wellness Medicals." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/pharmacy.css" />
+</head>
+<body class="app-body">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="assets/hms-logo.jpg" alt="Wellness Medicals Logo" class="brand-icon" />
+      <div class="brand-text"><span class="brand-title">Wellness</span><span class="brand-sub">Medicals HMS</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.html" class="nav-item" id="nav-dashboard"><span class="material-icons-round">dashboard</span><span class="nav-label">Dashboard</span></a>
+      <a href="patients.html" class="nav-item" id="nav-patients"><span class="material-icons-round">groups</span><span class="nav-label">Patients</span></a>
+      <a href="appointments.html" class="nav-item" id="nav-appointments"><span class="material-icons-round">event</span><span class="nav-label">Appointments</span></a>
+      <a href="doctors.html" class="nav-item" id="nav-doctors"><span class="material-icons-round">medical_services</span><span class="nav-label">Doctors</span></a>
+      <a href="pharmacy.html" class="nav-item active" id="nav-pharmacy"><span class="material-icons-round">medication</span><span class="nav-label">Pharmacy</span></a>
+      <a href="lab.html" class="nav-item" id="nav-lab"><span class="material-icons-round">biotech</span><span class="nav-label">Lab</span></a>
+      <a href="administration.html" class="nav-item" id="nav-admin" style="display: none;"><span class="material-icons-round">admin_panel_settings</span><span class="nav-label">Administration</span></a>
+      <div class="nav-divider"></div>
+      <a href="settings.html" class="nav-item" id="nav-settings"><span class="material-icons-round">settings</span><span class="nav-label">Settings</span></a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="user-avatar" id="userAvatar">DS</div>
+      <div class="user-info"><span class="user-name" id="sidebarUserName">Dr. Sarah Mitchell</span><span class="user-role" id="sidebarUserRole">Chief Surgeon · Admin</span></div>
+      <button class="logout-btn" id="logoutBtn"><span class="material-icons-round">logout</span></button>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <div class="main-content">
+    <header class="topbar">
+      <button class="menu-toggle" id="menuToggle"><span class="material-icons-round">menu</span></button>
+      <div class="topbar-search">
+        <span class="material-icons-round search-icon">search</span>
+        <input type="text" id="pharmaSearch" placeholder="Search medicines, invoices…" oninput="filterPharmacy()" />
+      </div>
+      <div class="topbar-actions">
+        <button class="topbar-btn"><span class="material-icons-round">notifications</span><span class="badge">3</span></button>
+        <div class="topbar-avatar" id="topbarAvatar">DS</div>
+      </div>
+    </header>
+
+    <main class="page-body">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Pharmacy & Billing</h1>
+          <p class="page-sub">Inventory management and invoice generation</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn-secondary" onclick="openModal('addMedModal')">
+            <span class="material-icons-round">add_circle</span> Add Medicine
+          </button>
+          <button class="btn-primary" onclick="openModal('generateBillModal')">
+            <span class="material-icons-round">receipt_long</span> Generate Bill
+          </button>
+        </div>
+      </div>
+
+      <!-- Alert: Low Stock -->
+      <div class="alert-banner glass-card" id="lowStockAlert">
+        <span class="material-icons-round">warning</span>
+        <p><strong>Low Stock Alert:</strong> 4 medicines are running low. <a href="#" onclick="showLowStock()">View items</a></p>
+        <button onclick="document.getElementById('lowStockAlert').style.display='none'" class="close-alert"><span class="material-icons-round">close</span></button>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="pharma-stats-row">
+        <div class="stat-card" style="--accent:#0D9488">
+          <div class="stat-icon-wrap"><span class="material-icons-round">medication</span></div>
+          <div class="stat-body"><p class="stat-label">Total Medicines</p><h2 class="stat-value">284</h2><p class="stat-delta positive">In stock</p></div>
+        </div>
+        <div class="stat-card" style="--accent:#F59E0B">
+          <div class="stat-icon-wrap"><span class="material-icons-round">inventory_2</span></div>
+          <div class="stat-body"><p class="stat-label">Low Stock Items</p><h2 class="stat-value">4</h2><p class="stat-delta negative">Reorder needed</p></div>
+        </div>
+        <div class="stat-card" style="--accent:#EF4444">
+          <div class="stat-icon-wrap"><span class="material-icons-round">event_busy</span></div>
+          <div class="stat-body"><p class="stat-label">Expiring Soon</p><h2 class="stat-value">12</h2><p class="stat-delta negative">Within 30 days</p></div>
+        </div>
+        <div class="stat-card" style="--accent:#3B82F6">
+          <div class="stat-icon-wrap"><span class="material-icons-round">receipt_long</span></div>
+          <div class="stat-body"><p class="stat-label">Unpaid Invoices</p><h2 class="stat-value">8</h2><p class="stat-delta">₹24,500 pending</p></div>
+        </div>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar glass-card" id="pharmaTabs">
+        <button class="tab-btn active" onclick="switchTab(this,'inventory')">Inventory</button>
+        <button class="tab-btn" onclick="switchTab(this,'prescriptions')">Pending Prescriptions</button>
+        <button class="tab-btn" onclick="switchTab(this,'billing')">Billing & Invoices</button>
+      </div>
+
+      <!-- Inventory Tab -->
+      <div class="tab-content" id="tab-inventory">
+        <div class="widget glass-card table-widget">
+          <div class="table-toolbar">
+            <div class="filter-chips">
+              <button class="chip active" onclick="filterMedCategory(this,'all')">All</button>
+              <button class="chip" onclick="filterMedCategory(this,'antibiotics')">Antibiotics</button>
+              <button class="chip" onclick="filterMedCategory(this,'analgesics')">Analgesics</button>
+              <button class="chip" onclick="filterMedCategory(this,'cardiac')">Cardiac</button>
+              <button class="chip" onclick="filterMedCategory(this,'vitamins')">Vitamins</button>
+            </div>
+            <input type="text" class="filter-select" id="medSearch" placeholder="Filter medicines…" style="width:200px" oninput="filterMedTable()" />
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="medTable">
+              <thead>
+                <tr>
+                  <th>Medicine</th>
+                  <th>Category</th>
+                  <th>Stock</th>
+                  <th>Unit Price</th>
+                  <th>Expiry</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="medTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prescriptions Tab -->
+      <div class="tab-content" id="tab-prescriptions" hidden>
+        <div class="widget glass-card">
+          <div class="widget-header"><h3>Pending Prescriptions from Doctors</h3></div>
+          <div class="prescription-list" id="prescriptionList"></div>
+        </div>
+      </div>
+
+      <!-- Billing Tab -->
+      <div class="tab-content" id="tab-billing" hidden>
+        <div class="widget glass-card table-widget">
+          <div class="table-toolbar">
+            <div class="filter-chips">
+              <button class="chip active" onclick="filterBill(this,'all')">All</button>
+              <button class="chip" onclick="filterBill(this,'paid')">Paid</button>
+              <button class="chip" onclick="filterBill(this,'unpaid')">Unpaid</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="billTable">
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Patient</th>
+                  <th>Date</th>
+                  <th>Items</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="billTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add Medicine Modal -->
+  <div class="modal-overlay" id="addMedModal" onclick="closeModal(event,'addMedModal')">
+    <div class="modal glass-card">
+      <div class="modal-header">
+        <h2>Add Medicine</h2>
+        <button class="modal-close" onclick="closeModal(null,'addMedModal')"><span class="material-icons-round">close</span></button>
+      </div>
+      <form class="modal-form" onsubmit="submitAddMed(event)">
+        <div class="form-group"><label>Medicine Name *</label><input type="text" id="medName" required /></div>
+        <div class="form-row-2">
+          <div class="form-group"><label>Category</label><select id="medCat"><option>Antibiotics</option><option>Analgesics</option><option>Cardiac</option><option>Vitamins</option><option>Other</option></select></div>
+          <div class="form-group"><label>Stock Quantity *</label><input type="number" id="medStock" required min="0" /></div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group"><label>Unit Price (₹)</label><input type="number" id="medPrice" min="0" step="0.01" /></div>
+          <div class="form-group"><label>Expiry Date</label><input type="date" id="medExpiry" /></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal(null,'addMedModal')">Cancel</button>
+          <button type="submit" class="btn-primary">Add to Inventory</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Generate Bill Modal -->
+  <div class="modal-overlay" id="generateBillModal" onclick="closeModal(event,'generateBillModal')">
+    <div class="modal glass-card wide-modal">
+      <div class="modal-header">
+        <h2>Generate Invoice</h2>
+        <button class="modal-close" onclick="closeModal(null,'generateBillModal')"><span class="material-icons-round">close</span></button>
+      </div>
+      <form class="modal-form" onsubmit="submitBill(event)">
+        <div class="form-row-2">
+          <div class="form-group"><label>Patient *</label>
+          <div class="custom-autocomplete" id="billPatientAutocomplete">
+            <input type="text" id="billPatient" placeholder="Type to search patient name or phone..." required autocomplete="off" />
+            <div class="autocomplete-dropdown" id="billPatientDropdown"></div>
+          </div>
+          </div>
+          <div class="form-group"><label>Invoice Date</label><input type="date" id="billDate" /></div>
+        </div>
+        <div class="form-group"><label>Consultation Fee (₹)</label><input type="number" id="billConsult" value="500" min="0" /></div>
+        <div class="invoice-items">
+          <div class="items-header"><h4>Medicines / Services</h4><button type="button" class="btn-sm btn-secondary" onclick="addBillItem()"><span class="material-icons-round">add</span> Add Item</button></div>
+          <div id="billItemsContainer">
+            <div class="bill-item-row"><input type="text" placeholder="Item name" class="item-name" /><input type="number" placeholder="Qty" class="item-qty" min="1" value="1" oninput="updateBillTotal()" /><input type="number" placeholder="Price" class="item-price" min="0" oninput="updateBillTotal()" /><button type="button" class="icon-btn danger" onclick="this.parentElement.remove();updateBillTotal()"><span class="material-icons-round">delete</span></button></div>
+          </div>
+        </div>
+        <div class="bill-total"><strong>Total: ₹<span id="billTotalAmt">500</span></strong></div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal(null,'generateBillModal')">Cancel</button>
+          <button type="submit" class="btn-primary"><span class="material-icons-round">print</span> Generate & Print</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bill View Modal -->
+  <div class="modal-overlay" id="viewBillModal" onclick="closeModal(event,'viewBillModal')">
+    <div class="modal glass-card wide-modal" id="viewBillContent"></div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script src="js/pharmacy.js"></script>
+</body>
+</html>
