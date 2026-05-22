@@ -92,6 +92,17 @@ function filterMedTable() {
   renderMedTable(MEDICINES.filter(m => m.name.toLowerCase().includes(q)));
 }
 
+function showLowStock() {
+  medFilter = 'low';
+  const chips = document.querySelectorAll('#tab-inventory .chip');
+  chips.forEach(c => c.classList.remove('active'));
+  if (chips.length > 0) chips[0].classList.add('active');
+  const invBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.textContent.trim().toLowerCase().includes('inventory'));
+  if (invBtn) invBtn.click();
+  renderMedTable(MEDICINES.filter(m => m.status === 'low' || m.status === 'out'));
+  toast('Showing low-stock and out-of-stock items', 'info', 'inventory_2');
+}
+
 function renderPrescriptions() {
   const list = document.getElementById('prescriptionList');
   if (!list) return;
@@ -144,9 +155,11 @@ function filterBill(btn, f) {
   renderBillTable();
 }
 
-function markPaid(inv) {
+async function markPaid(inv) {
   const i = INVOICES.find(x => x.inv === inv);
-  if (i) { i.status = 'paid'; renderBillTable(); toast(`${inv} marked as paid!`, 'success'); }
+  if (i) { i.status = 'paid'; renderBillTable();
+    try { const fs = window.firebaseDb && window.firebaseFS; if (fs) { const snap = await fs.getDocs(fs.query(fs.collection(window.firebaseDb, 'transactions'), fs.where('patientName', '==', i.patient), fs.limit(1))); snap.forEach(d => fs.updateDoc(d.ref, { status: 'paid' })); } } catch (e) { /* ignore */ }
+    toast(`${inv} marked as paid!`, 'success'); }
 }
 
 function viewBill(inv) {
@@ -181,7 +194,7 @@ function viewBill(inv) {
   openModal('viewBillModal');
 }
 
-function submitAddMed(e) {
+async function submitAddMed(e) {
   e.preventDefault();
   const stock = parseInt(document.getElementById('medStock').value) || 0;
   const safetyStock = 30;
@@ -203,6 +216,13 @@ function submitAddMed(e) {
     reorderQty: reorderQty,
     status: stock === 0 ? 'out' : stock <= reorderPoint ? 'low' : 'in-stock'
   };
+
+  // Persist to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'inventory'), m);
+  } catch (e) { addConsoleLog('WARN', 'Failed to save med to Firestore: ' + e.message); }
+
   MEDICINES.unshift(m);
   saveInventory();
   renderMedTable();
@@ -260,10 +280,19 @@ function addBillItem() {
   container.appendChild(row);
 }
 
-function submitBill(e) {
+async function submitBill(e) {
   e.preventDefault();
   const patient = document.getElementById('billPatient').value;
-  const newInv = { inv: `INV-${String(INVOICES.length+1).padStart(3,'0')}`, patient, date: new Date().toISOString().slice(0,10), items: document.querySelectorAll('.bill-item-row').length+1, amount: parseFloat(document.getElementById('billTotalAmt').textContent)||0, status:'unpaid' };
+  const amount = parseFloat(document.getElementById('billTotalAmt').textContent) || 0;
+  const fs = window.firebaseDb && window.firebaseFS;
+  let docRef;
+  try {
+    if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'transactions'), {
+      patientName: patient, amount, items: document.querySelectorAll('.bill-item-row').length + 1,
+      status: 'unpaid', createdAt: fs.serverTimestamp?.() || new Date().toISOString()
+    });
+  } catch (e) { addConsoleLog('WARN', 'Failed to save invoice: ' + e.message); }
+  const newInv = { inv: docRef ? docRef.id.slice(0, 8).toUpperCase() : `INV-${String(INVOICES.length+1).padStart(3,'0')}`, patient, date: new Date().toISOString().slice(0,10), items: document.querySelectorAll('.bill-item-row').length+1, amount, status:'unpaid' };
   INVOICES.unshift(newInv);
   closeModal(null,'generateBillModal');
   switchTab(document.querySelector('.tab-btn:last-child'), 'billing');
@@ -284,7 +313,7 @@ function initPatientAutocomplete() {
 
   function renderOptions(query = '') {
     const q = query.toLowerCase();
-    const filtered = PATIENTS_DB.filter(p => p.name.toLowerCase().includes(q) || p.phone.includes(q));
+    const patientSource = (window.allPatients && window.allPatients.length > 0) ? window.allPatients : PATIENTS_DB; const filtered = patientSource.filter(p => p.name.toLowerCase().includes(q) || p.phone.includes(q));
     if (filtered.length === 0) {
       dropdown.innerHTML = '<div class="autocomplete-item" style="color:var(--on-surface-var); cursor:default;">No patients found.</div>';
       return;
@@ -310,7 +339,53 @@ function initPatientAutocomplete() {
   window.selectBillPatient = function(val) { input.value = val; dropdown.classList.remove('active'); };
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+async function loadPrescriptionsFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'prescriptions'), fs.orderBy('createdAt', 'desc'), fs.limit(20));
+    const snap = await fs.getDocs(q);
+    snap.forEach(d => {
+      const data = d.data();
+      (data.medications || data.meds || []).forEach(med => {
+        PRESCRIPTIONS.push({
+          patient: data.patientName || data.patient || 'Unknown',
+          drug: typeof med === 'string' ? med : med.name || med.med || '—',
+          qty: typeof med === 'string' ? '—' : med.qty || med.dosage || '—',
+          doctor: data.doctor || '—',
+          issued: data.createdAt?.toDate?.()?.toLocaleDateString?.() || data.time || '—'
+        });
+      });
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load prescriptions: ' + e.message);
+  }
+}
+
+async function loadInvoicesFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'transactions'), fs.orderBy('createdAt', 'desc'), fs.limit(20));
+    const snap = await fs.getDocs(q);
+    snap.forEach(d => {
+      const data = d.data();
+      INVOICES.push({
+        inv: d.id.slice(0, 8).toUpperCase(),
+        patient: data.patientName || data.patient || 'Unknown',
+        date: data.createdAt?.toDate?.()?.toLocaleDateString?.() || new Date().toISOString().slice(0, 10),
+        items: data.items || 0,
+        amount: data.amount || 0,
+        status: data.status || 'unpaid'
+      });
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load invoices: ' + e.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await Promise.all([loadPrescriptionsFromFirestore(), loadInvoicesFromFirestore()]);
   MEDICINES.forEach(m => {
     if (m.leadTime === undefined) m.leadTime = 3;
     if (m.adu === undefined) m.adu = Math.round((m.reorderPoint - m.safetyStock) / m.leadTime) || 10;

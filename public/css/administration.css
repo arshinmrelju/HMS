@@ -57,6 +57,14 @@
   box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.1);
 }
 
+.filter-count-group {
+  min-width: auto;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
 .filter-group select {
   width: 100%;
   padding: 10px 12px;
@@ -280,7 +288,7 @@
 }
 
 /* --- Premium Side Drawer (Overriding Modal) --- */
-#addStaffModal, #editStaffModal {
+#addStaffModal, #editStaffModal, #scheduleModal {
   position: fixed;
   top: 0;
   right: 0;
@@ -301,8 +309,15 @@
   overflow: hidden;
 }
 
-#addStaffModal.active, #editStaffModal.active {
+#addStaffModal.active, #editStaffModal.active, #scheduleModal.active {
   transform: translateX(0);
+}
+
+/* Centered admin modals (not side drawers) */
+#hosModal {
+  padding: 0;
+  max-width: 480px;
+  border-radius: var(--radius-lg);
 }
 
 .modal-header {
@@ -400,16 +415,373 @@
   font-weight: 700;
 }
 
-/* Background Overlay for Drawer */
+/* Background Overlay for Drawer + Centered Modals */
 .modal-overlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
   z-index: 999;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
 }
 
 .modal-overlay.active {
+  display: flex;
+}
+
+/* =========================================
+   STAFF EMAIL SUB TEXT
+   ========================================= */
+.staff-email-sub {
   display: block;
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+  margin-top: 1px;
+}
+
+/* =========================================
+   SCHEDULE & ROTATION LAYOUT
+   ========================================= */
+.schedule-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --- Head of Staff Section --- */
+.hos-section {
+  padding: 24px;
+}
+
+.hos-header {
+  margin-bottom: 20px;
+}
+
+.hos-header h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.hos-header h3 .material-icons-round {
+  color: #F59E0B;
+  font-size: 28px;
+}
+
+.hos-header p {
+  font-size: 0.85rem;
+  color: var(--on-surface-var);
+}
+
+/* Current HOS Card */
+.hos-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(245, 158, 11, 0.1));
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hos-avatar-wrap {
+  position: relative;
+}
+
+.hos-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.4rem;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+.hos-crown {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #F59E0B;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+.hos-crown .material-icons-round {
+  font-size: 18px;
+  color: #fff;
+}
+
+.hos-info {
+  flex: 1;
+}
+
+.hos-info h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.hos-role {
+  font-size: 0.85rem;
+  color: var(--on-surface-var);
+  margin-bottom: 6px;
+}
+
+.hos-week {
+  font-size: 0.82rem;
+  color: var(--on-surface-var);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hos-week .material-icons-round {
+  font-size: 18px;
+  color: #F59E0B;
+}
+
+.hos-assigned {
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+.hos-badge-current {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: #F59E0B;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hos-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hos-actions .btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Empty State */
+.hos-empty {
+  text-align: center;
+  padding: 40px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.hos-empty h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.hos-empty p {
+  font-size: 0.85rem;
+  color: var(--on-surface-var);
+  max-width: 400px;
+}
+
+/* History */
+.hos-history {
+  margin-top: 24px;
+  border-top: 1px solid var(--surface-mid);
+  padding-top: 20px;
+}
+
+.hos-history h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--on-surface-var);
+  margin-bottom: 16px;
+}
+
+.hos-history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--surface-soft);
+}
+
+.hos-history-item:last-child {
+  border-bottom: none;
+}
+
+.hos-history-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-mid);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+}
+
+.hos-history-info {
+  flex: 1;
+}
+
+.hos-history-info strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.hos-history-week {
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+}
+
+.hos-history-by {
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+  opacity: 0.6;
+}
+
+/* --- Schedule Section --- */
+.sched-section {
+  padding: 24px;
+}
+
+.sched-header {
+  margin-bottom: 4px;
+}
+
+.sched-header h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.sched-header h3 .material-icons-round {
+  color: var(--primary-light);
+  font-size: 28px;
+}
+
+.sched-header p {
+  font-size: 0.85rem;
+  color: var(--on-surface-var);
+}
+
+/* Shift time display */
+.shift-time {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--primary-light);
+  background: rgba(13, 148, 136, 0.08);
+  padding: 4px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* Day chips in table */
+.days-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.day-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--surface-soft);
+  color: var(--on-surface-var);
+  border: 1px solid var(--surface-mid);
+}
+
+/* Day chip selector in form */
+.days-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.day-chip-select {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--surface-mid);
+  background: var(--surface-soft);
+  color: var(--on-surface-var);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.day-chip-select:hover {
+  border-color: var(--primary-soft);
+  background: rgba(13, 148, 136, 0.05);
+}
+
+.day-chip-select.active {
+  border-color: var(--primary-light);
+  background: rgba(13, 148, 136, 0.12);
+  color: var(--primary-dark);
+}
+
+/* Text muted */
+.text-muted {
+  color: var(--on-surface-var);
+  opacity: 0.6;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .hos-card {
+    flex-direction: column;
+    text-align: center;
+  }
+  .hos-badge-current {
+    position: static;
+    display: inline-block;
+    margin-top: 8px;
+  }
+  .hos-actions {
+    flex-direction: column;
+  }
+  .schedule-layout {
+    gap: 16px;
+  }
 }

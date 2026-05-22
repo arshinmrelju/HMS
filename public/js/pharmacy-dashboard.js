@@ -159,20 +159,28 @@ function selectRx(id) {
 }
 
 /* --- Mark as Dispensed --- */
-function markDispensed(id) {
+async function markDispensed(id) {
   const rx = RX_QUEUE.find(r => r.id === id);
   if (rx) {
     rx.status = 'dispensing';
     renderRxQueue();
     selectRx(id);
+    try {
+      const fs = window.firebaseDb && window.firebaseFS;
+      if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'prescriptions', id), { status: 'dispensing' });
+    } catch (e) { addConsoleLog('WARN', 'Failed to update Rx status: ' + e.message); }
     toast(`${rx.patient}'s prescription marked as dispensing!`, 'success');
   }
 }
 
-function dispenseAndBill(id) {
+async function dispenseAndBill(id) {
   const rx = RX_QUEUE.find(r => r.id === id);
   if (rx) {
     rx.status = 'ready';
+    try {
+      const fs = window.firebaseDb && window.firebaseFS;
+      if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'prescriptions', id), { status: 'ready' });
+    } catch (e) { addConsoleLog('WARN', 'Failed to update Rx status: ' + e.message); }
     // Auto-fill invoice
     const invPatient = document.getElementById('invoicePatient');
     if (invPatient) invPatient.value = rx.patient;
@@ -439,11 +447,20 @@ function printInvoice() {
   setTimeout(() => toast('Invoice sent to Printer Queue!', 'success'), 1200);
 }
 
-function submitInvoice() {
+async function submitInvoice() {
   const patient = document.getElementById('invoicePatient')?.value || 'Patient';
-  const total = document.getElementById('invoiceTotal')?.textContent || '₹0';
-  toast(`Payment of ${total} collected from ${patient}!`, 'success', 'payments');
-  // Reset form
+  const totalText = document.getElementById('invoiceTotal')?.textContent || '₹0';
+  const amount = parseFloat(totalText.replace(/[₹,]/g, '')) || 0;
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs && amount > 0) {
+      await fs.addDoc(fs.collection(window.firebaseDb, 'transactions'), {
+        patientName: patient, amount, status: 'paid', items: document.querySelectorAll('.invoice-line').length,
+        createdAt: fs.serverTimestamp?.() || new Date().toISOString()
+      });
+    }
+  } catch (e) { addConsoleLog('WARN', 'Failed to save transaction: ' + e.message); }
+  toast(`Payment of ${totalText} collected from ${patient}!`, 'success', 'payments');
   setTimeout(() => {
     document.getElementById('invoicePatient').value = '';
     document.getElementById('invoiceLines').innerHTML = '';
@@ -453,7 +470,7 @@ function submitInvoice() {
 }
 
 /* --- Add Manual Rx --- */
-function addManualRx() {
+async function addManualRx() {
   const patient = document.getElementById('manualRxPatient')?.value.trim();
   const doctor = document.getElementById('manualRxDoctor')?.value.trim();
   const meds = document.getElementById('manualRxMeds')?.value.trim();
@@ -462,17 +479,22 @@ function addManualRx() {
     return;
   }
   const newRx = {
-    id: `RX-${2400 + RX_QUEUE.length + 1}`,
-    patient,
+    patientName: patient,
     age: 0,
     doctor: doctor || 'Unknown',
-    meds: meds.split('\n').filter(Boolean),
+    medications: meds.split('\n').filter(Boolean),
     status: 'pending',
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     timestamp: new Date().toISOString(),
-    priority: 'medium'
+    priority: 'medium',
+    createdAt: window.firebaseFS?.serverTimestamp?.() || new Date().toISOString()
   };
-  RX_QUEUE.unshift(newRx);
+  let docRef;
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'prescriptions'), newRx);
+  } catch (e) { addConsoleLog('WARN', 'Failed to save Rx: ' + e.message); }
+  RX_QUEUE.unshift({ id: docRef?.id || `RX-${2400 + RX_QUEUE.length + 1}`, ...newRx, meds: newRx.medications });
   renderRxQueue();
   closeModal(null, 'newRxModal');
   document.getElementById('manualRxPatient').value = '';
@@ -483,8 +505,35 @@ function addManualRx() {
 
 
 
+async function loadRxQueueFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'prescriptions'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
+    const snap = await fs.getDocs(q);
+    if (snap.empty) return;
+    RX_QUEUE = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        patient: data.patientName || data.patient || 'Unknown',
+        age: data.patientAge || data.age || 'N/A',
+        doctor: data.doctor || 'Unknown',
+        meds: data.medications || data.meds || [],
+        status: data.status || 'pending',
+        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
+        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+        priority: data.priority || 'medium'
+      };
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load Rx queue from Firestore: ' + e.message);
+  }
+}
+
 /* --- Input listeners for invoice total --- */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadRxQueueFromFirestore();
   const todayChip = document.querySelector(`#rxSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
     sfChipSelect(todayChip, 'rx', 'today');
@@ -493,8 +542,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   fetchAndRenderInventory();
   fetchAndRenderStockLevels();
-  // Don't update invoice total here, it will be updated after inventory is fetched
-  // Live Rx updates will come from Firestore
 
   // Event delegation for invoice inputs
   document.getElementById('invoiceLines')?.addEventListener('input', updateInvoiceTotal);
@@ -502,7 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Setup search and pagination listeners
   const searchInput = document.getElementById('inventorySearch');
   if (searchInput) {
-    // Simple debounce
     let timeout = null;
     searchInput.addEventListener('input', (e) => {
       clearTimeout(timeout);

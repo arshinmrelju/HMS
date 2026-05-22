@@ -184,7 +184,7 @@ function clearScanner() {
 }
 
 /* --- Save Metrics --- */
-function saveMetrics() {
+async function saveMetrics() {
   const specId = document.getElementById('metricsSpecimenSelect')?.value;
   if (!specId) { toast('Select a specimen first.', 'warning'); return; }
 
@@ -225,11 +225,26 @@ function saveMetrics() {
     renderResults();
   }
 
+  // Persist to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs) {
+      await fs.updateDoc(fs.doc(window.firebaseDb, 'lab_orders', specId), {
+        status: spc.status,
+        results: vals,
+        critical: hasAlert,
+        completedAt: fs.serverTimestamp?.() || new Date().toISOString()
+      });
+    }
+  } catch (e) {
+    addConsoleLog('WARN', 'Failed to save metrics to Firestore: ' + e.message);
+  }
+
   toast(hasAlert ? `⚠ Abnormal values detected for ${spc.patient}!` : `Results saved for ${spc.patient}!`, hasAlert ? 'warning' : 'success');
 }
 
 /* --- Add Specimen --- */
-function addSpecimen() {
+async function addSpecimen() {
   const patient = document.getElementById('newSpcPatient')?.value.trim();
   const test = document.getElementById('newSpcType')?.value;
   const sample = document.getElementById('newSpcSample')?.value;
@@ -237,18 +252,24 @@ function addSpecimen() {
   if (!patient) { toast('Please enter patient name.', 'warning'); return; }
 
   const newSpc = {
-    id: `SPC-${1100 + SPECIMENS.length + 1}`,
-    patient, age: 0, test, sample, doctor,
+    patientName: patient, age: 0, testType: test, sampleType: sample, doctor,
     status: 'queued', time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     timestamp: new Date().toISOString(),
-    critical: false
+    critical: false,
+    createdAt: window.firebaseFS?.serverTimestamp?.() || new Date().toISOString()
   };
-  SPECIMENS.push(newSpc);
+  let docRef;
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'lab_orders'), newSpc);
+  } catch (e) { addConsoleLog('WARN', 'Failed to save specimen: ' + e.message); }
+
+  SPECIMENS.push({ id: docRef?.id || `SPC-${1100 + SPECIMENS.length + 1}`, ...newSpc, patient: newSpc.patientName, test: newSpc.testType, sample: newSpc.sampleType });
   renderSpecimenQueue();
   closeModal(null, 'newSpecimenModal');
   document.getElementById('newSpcPatient').value = '';
   document.getElementById('newSpcDoctor').value = '';
-  toast(`Specimen ${newSpc.id} logged for ${patient}!`, 'success', 'science');
+  toast(`Specimen logged for ${patient}!`, 'success', 'science');
 }
 
 /* --- Print Result --- */
@@ -257,8 +278,45 @@ function printResult(id) {
   setTimeout(() => toast('Report sent to print queue!', 'success'), 1000);
 }
 
+async function loadSpecimensFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'lab_orders'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
+    const snap = await fs.getDocs(q);
+    if (snap.empty) return;
+    snap.forEach(d => {
+      const data = d.data();
+      SPECIMENS.push({
+        id: d.id,
+        patient: data.patientName || data.patient || 'Unknown',
+        age: data.patientAge || data.age || 'N/A',
+        test: data.test || data.testType || 'General',
+        sample: data.sample || data.sampleType || 'Blood',
+        doctor: data.doctor || data.referredBy || 'Unknown',
+        status: data.status || 'queued',
+        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
+        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+        critical: data.critical || false
+      });
+      if (data.status === 'complete' || data.status === 'Normal') {
+        COMPLETED_RESULTS.unshift({
+          id: d.id, patient: data.patientName || data.patient || 'Unknown',
+          test: data.test || data.testType || 'General',
+          status: data.critical ? 'Elevated' : 'Normal',
+          time: data.time || '—',
+          doctor: data.doctor || '—'
+        });
+      }
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load specimens from Firestore: ' + e.message);
+  }
+}
+
 /* --- DOMContentLoaded --- */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadSpecimensFromFirestore();
   const todayChip = document.querySelector(`#labSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
     sfChipSelect(todayChip, 'lab', 'today');

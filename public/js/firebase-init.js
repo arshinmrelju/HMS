@@ -3,7 +3,9 @@ import {
   getAuth,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {
   getFirestore,
@@ -49,6 +51,12 @@ isSupported()
 window.firebaseApp = app;
 window.firebaseAuth = auth;
 window.firebaseDb = db;
+window.createFirebaseUser = (email, password) => createUserWithEmailAndPassword(auth, email, password);
+window.sendFirebasePasswordReset = (email) => sendPasswordResetEmail(auth, email);
+window.firebaseFS = {
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
+  query, where, orderBy, limit: firestoreLimit, serverTimestamp, Timestamp
+};
 
 /* Global sanitizer for XSS prevention */
 window.esc = function esc(val) {

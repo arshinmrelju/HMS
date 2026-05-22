@@ -1,4 +1,4 @@
-import { getFirestore, collection, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+import { getFirestore, collection, writeBatch, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 
 const auth = getAuth(window.firebaseApp);
@@ -25,7 +25,6 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-import { getDoc } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 function log(msg) {
   const logEl = document.getElementById('log');

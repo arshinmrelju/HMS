@@ -240,9 +240,10 @@
           <div class="widget glass-card chart-widget">
             <div class="widget-header">
               <h3>Hospital Admissions Trend</h3>
-          </div>
-          <div class="chart-container" style="position:relative; height:250px;">
-            <canvas id="adminAdmissionsChart"></canvas>
+            </div>
+            <div class="chart-container" style="position:relative; height:250px;">
+              <canvas id="adminAdmissionsChart"></canvas>
+            </div>
           </div>
         </div>
 
@@ -251,30 +252,31 @@
           <div class="widget glass-card activity-widget">
             <div class="widget-header">
               <h3>Global Operations Log</h3>
+            </div>
+            <ul class="activity-list" style="list-style: none; padding: 0; margin: 0; display:flex; flex-direction:column; gap:16px;">
+              <li class="activity-item" style="display:flex; align-items:center; gap:12px;">
+                <div class="activity-icon login" style="width:36px; height:36px; border-radius:50%; background:var(--primary-soft); color:var(--primary-light); display:flex; align-items:center; justify-content:center;"><span class="material-icons-round">login</span></div>
+                <div class="activity-body" style="flex:1;">
+                  <strong>Staff Check-in</strong>
+                  <p style="font-size:0.8rem; color:var(--on-surface-var)">Nurse Priya Kapoor checked in at Reception Desk</p>
+                </div><span class="activity-time" style="font-size:0.75rem; color:var(--outline)">8:00 AM</span>
+              </li>
+              <li class="activity-item" style="display:flex; align-items:center; gap:12px;">
+                <div class="activity-icon med" style="width:36px; height:36px; border-radius:50%; background:var(--primary-soft); color:var(--primary-light); display:flex; align-items:center; justify-content:center;"><span class="material-icons-round">medication</span></div>
+                <div class="activity-body" style="flex:1;">
+                  <strong>Inventory Restocked</strong>
+                  <p style="font-size:0.8rem; color:var(--on-surface-var)">Pharmacy inventory updated (Metformin, Ibuprofen)</p>
+                </div><span class="activity-time" style="font-size:0.75rem; color:var(--outline)">7:45 AM</span>
+              </li>
+              <li class="activity-item" style="display:flex; align-items:center; gap:12px;">
+                <div class="activity-icon lab" style="width:36px; height:36px; border-radius:50%; background:var(--primary-soft); color:var(--primary-light); display:flex; align-items:center; justify-content:center;"><span class="material-icons-round">science</span></div>
+                <div class="activity-body" style="flex:1;">
+                  <strong>Lab Scanner Calibrated</strong>
+                  <p style="font-size:0.8rem; color:var(--on-surface-var)">Hematology digital analyzer calibration test passed</p>
+                </div><span class="activity-time" style="font-size:0.75rem; color:var(--outline)">7:00 AM</span>
+              </li>
+            </ul>
           </div>
-          <ul class="activity-list" style="list-style: none; padding: 0; margin: 0; display:flex; flex-direction:column; gap:16px;">
-            <li class="activity-item" style="display:flex; align-items:center; gap:12px;">
-              <div class="activity-icon login" style="width:36px; height:36px; border-radius:50%; background:var(--primary-soft); color:var(--primary-light); display:flex; align-items:center; justify-content:center;"><span class="material-icons-round">login</span></div>
-              <div class="activity-body" style="flex:1;">
-                <strong>Staff Check-in</strong>
-                <p style="font-size:0.8rem; color:var(--on-surface-var)">Nurse Priya Kapoor checked in at Reception Desk</p>
-              </div><span class="activity-time" style="font-size:0.75rem; color:var(--outline)">8:00 AM</span>
-            </li>
-            <li class="activity-item" style="display:flex; align-items:center; gap:12px;">
-              <div class="activity-icon med" style="width:36px; height:36px; border-radius:50%; background:var(--primary-soft); color:var(--primary-light); display:flex; align-items:center; justify-content:center;"><span class="material-icons-round">medication</span></div>
-              <div class="activity-body" style="flex:1;">
-                <strong>Inventory Restocked</strong>
-                <p style="font-size:0.8rem; color:var(--on-surface-var)">Pharmacy inventory updated (Metformin, Ibuprofen)</p>
-              </div><span class="activity-time" style="font-size:0.75rem; color:var(--outline)">7:45 AM</span>
-            </li>
-            <li class="activity-item" style="display:flex; align-items:center; gap:12px;">
-              <div class="activity-icon lab" style="width:36px; height:36px; border-radius:50%; background:var(--primary-soft); color:var(--primary-light); display:flex; align-items:center; justify-content:center;"><span class="material-icons-round">science</span></div>
-              <div class="activity-body" style="flex:1;">
-                <strong>Lab Scanner Calibrated</strong>
-                <p style="font-size:0.8rem; color:var(--on-surface-var)">Hematology digital analyzer calibration test passed</p>
-              </div><span class="activity-time" style="font-size:0.75rem; color:var(--outline)">7:00 AM</span>
-            </li>
-          </ul>
         </div>
 
         <!-- TAB 3: Department Load -->
@@ -282,25 +284,26 @@
           <div class="widget glass-card dept-widget">
             <div class="widget-header">
               <h3>Department Load</h3>
-          </div>
-          <div class="dept-list" style="display:flex; flex-direction:column; gap:14px; margin-top:12px;">
-            <div class="dept-item" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-              <span class="dept-name" style="font-weight:600; width:90px;">Cardiology</span>
-              <div class="dept-bar-wrap" style="flex:1; height:8px; background:var(--surface-high); border-radius:99px; overflow:hidden;">
-                <div class="dept-bar" style="width:78%; height:100%; background:var(--primary-light); border-radius:99px;"></div>
-              </div><span class="dept-pct" style="font-size:0.82rem; font-weight:700;">78%</span>
             </div>
-            <div class="dept-item" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-              <span class="dept-name" style="font-weight:600; width:90px;">Emergency</span>
-              <div class="dept-bar-wrap" style="flex:1; height:8px; background:var(--surface-high); border-radius:99px; overflow:hidden;">
-                <div class="dept-bar" style="width:92%; height:100%; background:#EF4444; border-radius:99px;"></div>
-              </div><span class="dept-pct" style="font-size:0.82rem; font-weight:700; color:#EF4444;">92%</span>
-            </div>
-            <div class="dept-item" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-              <span class="dept-name" style="font-weight:600; width:90px;">Laboratory</span>
-              <div class="dept-bar-wrap" style="flex:1; height:8px; background:var(--surface-high); border-radius:99px; overflow:hidden;">
-                <div class="dept-bar" style="width:45%; height:100%; background:#0ea5e9; border-radius:99px;"></div>
-              </div><span class="dept-pct" style="font-size:0.82rem; font-weight:700;">45%</span>
+            <div class="dept-list" style="display:flex; flex-direction:column; gap:14px; margin-top:12px;">
+              <div class="dept-item" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <span class="dept-name" style="font-weight:600; width:90px;">Cardiology</span>
+                <div class="dept-bar-wrap" style="flex:1; height:8px; background:var(--surface-high); border-radius:99px; overflow:hidden;">
+                  <div class="dept-bar" style="width:78%; height:100%; background:var(--primary-light); border-radius:99px;"></div>
+                </div><span class="dept-pct" style="font-size:0.82rem; font-weight:700;">78%</span>
+              </div>
+              <div class="dept-item" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <span class="dept-name" style="font-weight:600; width:90px;">Emergency</span>
+                <div class="dept-bar-wrap" style="flex:1; height:8px; background:var(--surface-high); border-radius:99px; overflow:hidden;">
+                  <div class="dept-bar" style="width:92%; height:100%; background:#EF4444; border-radius:99px;"></div>
+                </div><span class="dept-pct" style="font-size:0.82rem; font-weight:700; color:#EF4444;">92%</span>
+              </div>
+              <div class="dept-item" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <span class="dept-name" style="font-weight:600; width:90px;">Laboratory</span>
+                <div class="dept-bar-wrap" style="flex:1; height:8px; background:var(--surface-high); border-radius:99px; overflow:hidden;">
+                  <div class="dept-bar" style="width:45%; height:100%; background:#0ea5e9; border-radius:99px;"></div>
+                </div><span class="dept-pct" style="font-size:0.82rem; font-weight:700;">45%</span>
+              </div>
             </div>
           </div>
         </div>
@@ -310,9 +313,10 @@
           <div class="widget glass-card donut-widget">
             <div class="widget-header">
               <h3>Overall Patient Status</h3>
-          </div>
-          <div class="donut-container" style="position:relative; height:200px; display:flex; justify-content:center; align-items:center;">
-            <canvas id="adminStatusChart"></canvas>
+            </div>
+            <div class="donut-container" style="position:relative; height:200px; display:flex; justify-content:center; align-items:center;">
+              <canvas id="adminStatusChart"></canvas>
+            </div>
           </div>
         </div>
 
@@ -321,13 +325,14 @@
           <div class="widget glass-card bed-widget" style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
             <div class="widget-header" style="width:100%;">
               <h3>Bed Occupancy</h3>
-          </div>
-          <div class="bed-stat" style="text-align:center; padding:12px 0;">
-            <div class="bed-circle" style="width:110px; height:110px; border-radius:50%; border:5px solid var(--primary-light); border-top-color:var(--surface-high); display:flex; flex-direction:column; align-items:center; justify-content:center; margin:0 auto 12px;">
-              <span class="bed-num" style="font-size:1.6rem; font-weight:800; color:var(--primary-light)">218</span>
-              <span class="bed-total" style="font-size:0.75rem; color:var(--outline)">/ 280 beds</span>
             </div>
-            <p class="bed-pct" style="font-weight:700; color:var(--on-surface)">77.8% Occupied</p>
+            <div class="bed-stat" style="text-align:center; padding:12px 0;">
+              <div class="bed-circle" style="width:110px; height:110px; border-radius:50%; border:5px solid var(--primary-light); border-top-color:var(--surface-high); display:flex; flex-direction:column; align-items:center; justify-content:center; margin:0 auto 12px;">
+                <span class="bed-num" style="font-size:1.6rem; font-weight:800; color:var(--primary-light)">218</span>
+                <span class="bed-total" style="font-size:0.75rem; color:var(--outline)">/ 280 beds</span>
+              </div>
+              <p class="bed-pct" style="font-weight:700; color:var(--on-surface)">77.8% Occupied</p>
+            </div>
           </div>
         </div>
       </div>

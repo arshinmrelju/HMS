@@ -1,6 +1,9 @@
 'use strict';
 HMS.requireAuth();
 
+const db = window.firebaseDb;
+const fs = window.firebaseFS;
+
 let allAppts = [];
 let filteredAppts = [];
 let selectedDate = new Date();
@@ -8,6 +11,19 @@ let weekOffset = 0;
 let apptStatusFilter = 'all';
 let currentView = 'list';
 let appointmentEntryMode = 'scheduled';
+
+async function loadAppointments() {
+  try {
+    const snap = await fs.getDocs(fs.query(fs.collection(db, 'appointments'), fs.orderBy('date', 'desc'), fs.orderBy('time', 'asc')));
+    allAppts = [];
+    snap.forEach(d => allAppts.push({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.error('Failed to load appointments:', e);
+    allAppts = [];
+  }
+  renderCalendarStrip();
+  filterAppointments();
+}
 
 function renderCalendarStrip() {
   const ref = new Date();
@@ -186,14 +202,18 @@ function viewAppt(id) {
   toast(`${a.patient} – ${a.type} at ${formatTime12(a.time)}`, 'info', 'event');
 }
 
-function editApptStatus(id) {
+async function editApptStatus(id) {
   const statuses = ['confirmed','pending','completed','cancelled'];
   const a = allAppts.find(x => x.id === id);
   if (!a) return;
   const idx = statuses.indexOf(a.status);
-  a.status = statuses[(idx+1) % statuses.length];
+  const newStatus = statuses[(idx+1) % statuses.length];
+  a.status = newStatus;
+  try {
+    await fs.updateDoc(fs.doc(db, 'appointments', id), { status: newStatus, updatedAt: fs.serverTimestamp() });
+  } catch (e) { console.warn('Status update failed:', e); }
   filterAppointments();
-  toast(`Status updated to ${cap(a.status)}`, 'success');
+  toast(`Status updated to ${cap(newStatus)}`, 'success');
 }
 
 function localDateValue(d) {
@@ -239,11 +259,10 @@ function openSpotVisit() {
   openModal('bookApptModal');
 }
 
-function submitBookAppt(e) {
+async function submitBookAppt(e) {
   e.preventDefault();
   const isSpot = appointmentEntryMode === 'spot';
-  const newA = {
-    id: `APT${String(allAppts.length+1).padStart(3,'0')}`,
+  const data = {
     patient: document.getElementById('apptPatient').value,
     doctor: document.getElementById('apptDoctor').value,
     dept: document.getElementById('apptDept').value || 'General',
@@ -253,15 +272,30 @@ function submitBookAppt(e) {
     status: 'confirmed',
     notes: document.getElementById('apptNotes').value || (isSpot ? 'Spot visit / no prior appointment' : ''),
   };
-  allAppts.push(newA);
-  selectedDate = new Date(`${newA.date}T00:00:00`);
-  closeModal(null, 'bookApptModal');
-  const form = document.getElementById('bookApptForm');
-  if (form) form.reset();
-  setAppointmentModalMode('scheduled');
-  renderCalendarStrip();
-  filterAppointments();
-  toast(`${isSpot ? 'Spot visit registered' : 'Appointment booked'} for ${newA.patient}!`, 'success');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Booking...';
+  try {
+    const docRef = await fs.addDoc(fs.collection(db, 'appointments'), {
+      ...data,
+      createdAt: fs.serverTimestamp(),
+      updatedAt: fs.serverTimestamp()
+    });
+    const newA = { id: docRef.id, ...data };
+    allAppts.push(newA);
+    selectedDate = new Date(`${data.date}T00:00:00`);
+    closeModal(null, 'bookApptModal');
+    const form = document.getElementById('bookApptForm');
+    if (form) form.reset();
+    setAppointmentModalMode('scheduled');
+    renderCalendarStrip();
+    filterAppointments();
+    toast(`${isSpot ? 'Spot visit registered' : 'Appointment booked'} for ${data.patient}!`, 'success');
+  } catch (err) {
+    toast('Failed to book: ' + err.message, 'error');
+  }
+  submitBtn.disabled = false;
+  submitBtn.textContent = isSpot ? 'Register Spot Visit' : 'Confirm Booking';
 }
 
 function initPatientAutocomplete() {
@@ -271,19 +305,19 @@ function initPatientAutocomplete() {
 
   function renderOptions(query = '') {
     const q = query.toLowerCase();
-    const filtered = allPatients ? allPatients.filter(p =>
-      p.name.toLowerCase().includes(q) || p.phone.includes(q)
+    const filtered = window.allPatients ? window.allPatients.filter(p =>
+      (`${p.fname} ${p.lname}`).toLowerCase().includes(q) || (p.contact || '').includes(q)
     ) : [];
     if (filtered.length === 0) {
       dropdown.innerHTML = '<div class="autocomplete-item" style="color:var(--on-surface-var); cursor:default;">No patients found.</div>';
       return;
     }
     dropdown.innerHTML = filtered.map(p => `
-      <div class="autocomplete-item" onclick="selectApptPatient('${esc(p.name)} - ${esc(p.phone)}')">
-        <div class="ac-avatar">${esc(p.name.substring(0,2).toUpperCase())}</div>
+      <div class="autocomplete-item" onclick="selectApptPatient('${esc(p.fname)} ${esc(p.lname)}')">
+        <div class="ac-avatar">${esc(((p.fname||'')[0]||'') + ((p.lname||'')[0]||''))}</div>
         <div class="ac-info">
-          <span class="ac-name">${esc(p.name)}</span>
-          <span class="ac-phone">${esc(p.phone)}</span>
+          <span class="ac-name">${esc(p.fname)} ${esc(p.lname)}</span>
+          <span class="ac-phone">${esc(p.contact || '')}</span>
         </div>
       </div>
     `).join('');
@@ -313,7 +347,6 @@ function initPatientAutocomplete() {
 document.addEventListener('DOMContentLoaded', () => {
   const dateInput = document.getElementById('apptDate');
   if (dateInput) dateInput.value = localDateValue(new Date());
-  renderCalendarStrip();
-  renderTimeline();
+  loadAppointments();
   initPatientAutocomplete();
 });

@@ -27,6 +27,11 @@ function ensureHMS() {
 ensureHMS();
 const HMS = window.HMS;
 
+/* Global console-log helper used by many pages */
+window.addConsoleLog = window.addConsoleLog || function addConsoleLog(type, msg) {
+  if (typeof console !== 'undefined') console.log('[' + type + '] ' + msg);
+};
+
 function toast(message, type = 'info', icon = null) {
   let container = document.getElementById('toastContainer');
   if (!container) {
@@ -326,10 +331,83 @@ document.addEventListener('DOMContentLoaded', () => {
   animateCounters();
 });
 
+/* --- Global Search --- */
+function initGlobalSearch() {
+  var searchInput = document.getElementById('globalSearch');
+  if (!searchInput) return;
+
+  searchInput.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var q = searchInput.value.trim();
+    if (!q) return;
+
+    var path = window.location.pathname.split('/').pop() || 'dashboard.html';
+
+    // Page-specific search routing
+    if (path === 'patients.html') {
+      // Trigger the patient search on the page
+      var patientSearch = document.getElementById('patientSearch');
+      if (patientSearch) {
+        patientSearch.value = q;
+        patientSearch.dispatchEvent(new Event('input'));
+        toast('Filtering patients for "' + q + '"', 'info', 'search');
+      }
+    } else if (path === 'pharmacy.html') {
+      // Trigger the medicine search on the page
+      var medSearch = document.getElementById('medSearch');
+      if (medSearch) {
+        medSearch.value = q;
+        medSearch.dispatchEvent(new Event('input'));
+        toast('Filtering medicines for "' + q + '"', 'info', 'search');
+      }
+    } else if (path === 'appointments.html') {
+      // Trigger appointment search
+      var aptSearch = document.getElementById('apptSearch');
+      if (aptSearch) {
+        aptSearch.value = q;
+        aptSearch.dispatchEvent(new Event('input'));
+        toast('Filtering appointments for "' + q + '"', 'info', 'search');
+      }
+    } else if (path === 'reports.html') {
+      // Trigger transaction search
+      var txnSearch = document.getElementById('searchTxn');
+      if (txnSearch) {
+        txnSearch.value = q;
+        txnSearch.dispatchEvent(new Event('input'));
+        toast('Filtering transactions for "' + q + '"', 'info', 'search');
+      }
+    } else {
+      // Default: redirect to patients page with search query
+      toast('Searching for "' + q + '" across the system...', 'info', 'search');
+      setTimeout(function() {
+        window.location.href = 'patients.html?search=' + encodeURIComponent(q);
+      }, 600);
+    }
+  });
+}
+
+// Initialize global search on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', initGlobalSearch);
+
 window.switchDashboardTab = function(tabId, event) {
-  document.querySelectorAll('.dashboard-tab-pane').forEach(pane => { pane.classList.remove('active'); });
-  document.querySelectorAll('.dashboard-tab-btn').forEach(btn => { btn.classList.remove('active'); });
-  const targetPane = document.getElementById(tabId);
+  document.querySelectorAll('.dashboard-tab-pane').forEach(function(pane) { pane.classList.remove('active'); });
+  document.querySelectorAll('.dashboard-tab-btn').forEach(function(btn) { btn.classList.remove('active'); });
+  var targetPane = document.getElementById(tabId);
   if (targetPane) targetPane.classList.add('active');
   if (event && event.currentTarget) event.currentTarget.classList.add('active');
 };
+
+// Support URL search parameter on patients.html
+document.addEventListener('DOMContentLoaded', function() {
+  var params = new URLSearchParams(window.location.search);
+  var searchQ = params.get('search');
+  if (searchQ) {
+    var gs = document.getElementById('globalSearch');
+    if (gs) gs.value = searchQ;
+    var patientSearch = document.getElementById('patientSearch');
+    if (patientSearch) {
+      patientSearch.value = searchQ;
+      patientSearch.dispatchEvent(new Event('input'));
+    }
+  }
+});

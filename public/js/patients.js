@@ -2,7 +2,10 @@
 
 HMS.requireAuth();
 
-let allPatients = [];
+const db = window.firebaseDb;
+const fs = window.firebaseFS;
+
+let allPatients = []; window.allPatients = allPatients;
 let filteredPatients = [];
 let currentPage = 1;
 const ROWS_PER_PAGE = 10;
@@ -27,10 +30,10 @@ function renderTable() {
   tbody.innerHTML = pageItems.map(p => `
     <tr>
       <td><input type="checkbox" /></td>
-      <td><code style="font-size:.78rem;background:var(--surface-mid);padding:2px 6px;border-radius:4px;color:var(--primary-light)">${esc(p.id)}</code></td>
+      <td><code style="font-size:.78rem;background:var(--surface-mid);padding:2px 6px;border-radius:4px;color:var(--primary-light)">${esc(p.id ? p.id.slice(0,8) : '--')}</code></td>
       <td>
         <div class="patient-cell">
-          <div class="mini-avatar">${esc(p.fname[0]||'')}${esc(p.lname[0]||'')}</div>
+          <div class="mini-avatar">${esc((p.fname||'U')[0])}${esc((p.lname||'')[0])}</div>
           <div>
             <div style="font-weight:700">${esc(p.fname)} ${esc(p.lname)}</div>
             <div style="font-size:.72rem;color:var(--on-surface-var)">${esc(p.age)} yrs · ${esc(p.blood)}</div>
@@ -152,10 +155,10 @@ function viewPatient(id) {
   bodyEl.innerHTML = `
     <div style="padding:0 28px 28px">
       <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:24px">
-        <div class="mini-avatar" style="width:64px;height:64px;font-size:1.3rem;background:linear-gradient(135deg,var(--primary-light),#2DD4BF);color:#fff">${esc(p.fname[0]||'')}${esc(p.lname[0]||'')}</div>
+        <div class="mini-avatar" style="width:64px;height:64px;font-size:1.3rem;background:linear-gradient(135deg,var(--primary-light),#2DD4BF);color:#fff">${esc((p.fname||'U')[0])}${esc((p.lname||'')[0])}</div>
         <div>
           <h3 style="font-family:var(--font-head);font-size:1.3rem;font-weight:800">${esc(p.fname)} ${esc(p.lname)}</h3>
-          <p style="color:var(--on-surface-var);font-size:.85rem">${esc(p.id)} · ${esc(p.dept)}</p>
+          <p style="color:var(--on-surface-var);font-size:.85rem">${esc(p.id ? p.id.slice(0,8) : '--')} · ${esc(p.dept)}</p>
           <span class="badge-status ${p.status}" style="margin-top:8px">${esc(cap(p.status))}</span>
         </div>
       </div>
@@ -169,24 +172,55 @@ function viewPatient(id) {
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
         <button class="btn-secondary" onclick="closeModal(null,'viewPatientModal')">Close</button>
-        <button class="btn-primary" onclick="closeModal(null,'viewPatientModal');toast('Editing ${esc(p.fname)}...','info','edit')">Edit Patient</button>
       </div>
     </div>
   `;
   openModal('viewPatientModal');
 }
 
-function editPatient(id) { toast(`Edit mode for ${id}`, 'info', 'edit'); }
-
-function deletePatient(id) {
-  if (!confirm('Remove this patient from the registry?')) return;
-  allPatients = allPatients.filter(p => p.id !== id);
-  filteredPatients = filteredPatients.filter(p => p.id !== id);
-  renderTable();
-  toast('Patient record removed', 'warning', 'delete');
+function editPatient(id) {
+  const p = allPatients.find(pt => pt.id === id);
+  if (!p) { toast('Patient not found', 'error'); return; }
+  const newStatus = prompt(`Current status: ${p.status}\nEnter new status (stable/recovering/critical):`, p.status);
+  if (!newStatus || !['stable','recovering','critical'].includes(newStatus)) { toast('Invalid status', 'warning'); return; }
+  fs.updateDoc(fs.doc(db, 'patients', id), { status: newStatus, updatedAt: fs.serverTimestamp() });
+  p.status = newStatus;
+  window.allPatients = allPatients;
+  applyFilters();
+  toast(`Patient ${p.fname} ${p.lname} status updated to ${newStatus}`, 'success');
 }
 
-function submitAddPatient(e) {
+async function deletePatient(id) {
+  if (!confirm('Remove this patient from the registry?')) return;
+  try {
+    await fs.deleteDoc(fs.doc(db, 'patients', id));
+    allPatients = allPatients.filter(p => p.id !== id);
+    window.allPatients = allPatients;
+    filteredPatients = filteredPatients.filter(p => p.id !== id);
+    applyFilters();
+    toast('Patient record removed', 'warning', 'delete');
+  } catch (err) {
+    toast('Failed to delete: ' + err.message, 'error');
+  }
+}
+
+async function loadPatients() {
+  const tbody = document.getElementById('patientTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--on-surface-var)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px;color:var(--outline-var)">hourglass_empty</span>Loading patients...</td></tr>';
+  try {
+    const snap = await fs.getDocs(fs.query(fs.collection(db, 'patients'), fs.orderBy('lastVisit', 'desc')));
+    allPatients = [];
+    snap.forEach(d => allPatients.push({ id: d.id, ...d.data() }));
+    window.allPatients = allPatients;
+  } catch (e) {
+    console.error('Failed to load patients:', e);
+    allPatients = [];
+    window.allPatients = allPatients;
+  }
+  applyFilters();
+}
+
+async function submitAddPatient(e) {
   e.preventDefault();
   const raw = {
     fname: sanitizeInput(document.getElementById('pFirstName').value),
@@ -203,26 +237,50 @@ function submitAddPatient(e) {
     toast(errors.join('. '), 'error');
     return;
   }
-  const newP = {
-    id: `WM-${String(allPatients.length + 1).padStart(3,'0')}`,
-    fname: raw.fname,
-    lname: raw.lname,
-    contact: raw.contact,
-    email: raw.email,
-    dept: raw.dept,
-    type: raw.type,
-    blood: raw.blood,
-    lastVisit: new Date().toISOString().slice(0,10),
-    status: 'stable',
-    age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25*24*3600*1000)) : 0,
-  };
-  allPatients.unshift(newP);
-  applyFilters();
-  closeModal(null, 'addPatientModal');
-  document.getElementById('addPatientForm').reset();
-  toast(`Patient ${newP.fname} ${newP.lname} registered!`, 'success');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Registering...';
+  try {
+    const docRef = await fs.addDoc(fs.collection(db, 'patients'), {
+      fname: raw.fname,
+      lname: raw.lname,
+      contact: raw.contact,
+      email: raw.email,
+      dept: raw.dept,
+      type: raw.type,
+      blood: raw.blood,
+      lastVisit: new Date().toISOString().slice(0, 10),
+      status: 'stable',
+      age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25 * 24 * 3600 * 1000)) : 0,
+      createdAt: fs.serverTimestamp(),
+      updatedAt: fs.serverTimestamp()
+    });
+    const newP = {
+      id: docRef.id,
+      fname: raw.fname,
+      lname: raw.lname,
+      contact: raw.contact,
+      email: raw.email,
+      dept: raw.dept,
+      type: raw.type,
+      blood: raw.blood,
+      status: 'stable',
+      age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25 * 24 * 3600 * 1000)) : 0,
+      lastVisit: new Date().toISOString().slice(0, 10)
+    };
+    allPatients.unshift(newP);
+    window.allPatients = allPatients;
+    applyFilters();
+    closeModal(null, 'addPatientModal');
+    document.getElementById('addPatientForm').reset();
+    toast(`Patient ${newP.fname} ${newP.lname} registered!`, 'success');
+  } catch (err) {
+    toast('Failed to register patient: ' + err.message, 'error');
+  }
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Register Patient';
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  renderTable();
+  loadPatients();
 });

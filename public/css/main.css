@@ -562,6 +562,10 @@ select {
   font-size: 0.875rem;
   color: var(--on-surface-var);
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .tab-btn.active {

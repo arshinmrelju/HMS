@@ -120,6 +120,25 @@ service cloud.firestore {
       allow delete: if isAuth() && hasRole('Admin');
     }
 
+    // === STAFF SCHEDULES COLLECTION ===
+    match /staff_schedules/{scheduleId} {
+      allow read: if isAuth() && hasAnyRole(['Admin', 'Doctor', 'Staff']);
+      allow write: if isAuth() && hasRole('Admin');
+    }
+
+    // === HEAD OF STAFF (current + history) COLLECTIONS ===
+    match /head_of_staff/{hosId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && hasRole('Admin');
+    }
+
+    match /head_of_staff_history/{historyId} {
+      allow read: if isAuth() && hasAnyRole(['Admin', 'Staff']);
+      allow create: if isAuth() && hasRole('Admin');
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // === WARDS + BEDS COLLECTION ===
     match /wards/{wardId} {
       allow read: if isAuth() && hasAnyRole(['Admin', 'Staff']);

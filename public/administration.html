@@ -141,6 +141,9 @@
         <button class="tab-btn active" onclick="switchTab(this, 'staff')">
           <span class="material-icons-round">groups</span> Staff Management
         </button>
+        <button class="tab-btn" onclick="switchTab(this, 'schedule')">
+          <span class="material-icons-round">schedule</span> Schedule &amp; Rotation
+        </button>
         <button class="tab-btn" onclick="switchTab(this, 'departments')">
           <span class="material-icons-round">account_tree</span> Departments
         </button>
@@ -179,6 +182,10 @@
               <option value="Inactive">Inactive</option>
             </select>
           </div>
+          <div class="filter-group filter-count-group">
+            <label>&nbsp;</label>
+            <span class="badge-status confirmed" style="font-size:0.85rem;padding:8px 16px;" id="staffCount">0</span>
+          </div>
         </div>
 
         <div class="glass-card table-widget">
@@ -198,6 +205,74 @@
                 <!-- Populated by JS -->
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Content: Schedule & Rotation -->
+      <div id="tab-schedule" class="tab-content" hidden>
+        <div class="schedule-layout">
+          <!-- Head of Staff Section -->
+          <div class="hos-section glass-card">
+            <div class="hos-header">
+              <h3><span class="material-icons-round">workspace_premium</span> Head of Staff — Weekly Rotation</h3>
+              <p>Assign a non-doctor staff member as Head of Staff for the current week. Rotates weekly.</p>
+            </div>
+            <div id="hosCurrentDisplay"></div>
+            <div class="hos-history">
+              <h4>Rotation History</h4>
+              <div id="hosHistoryList"></div>
+            </div>
+          </div>
+
+          <!-- Schedule Management -->
+          <div class="sched-section glass-card">
+            <div class="sched-header">
+              <h3><span class="material-icons-round">calendar_month</span> Staff Schedules</h3>
+              <p>Manage shift timings and working days for each staff member.</p>
+            </div>
+            <div class="admin-filters" style="padding: 16px 0;margin-bottom:8px;">
+              <div class="filter-group">
+                <label>Search Schedule</label>
+                <div class="search-input-wrap">
+                  <span class="material-icons-round">search</span>
+                  <input type="text" id="scheduleSearch" placeholder="Name, ID, or Department..." oninput="filterScheduleTable()" />
+                </div>
+              </div>
+              <div class="filter-group">
+                <label>Department</label>
+                <select id="scheduleDeptFilter" onchange="filterScheduleTable()">
+                  <option value="all">All Departments</option>
+                  <option value="General Surgery">General Surgery</option>
+                  <option value="Cardiology">Cardiology</option>
+                  <option value="Neurology">Neurology</option>
+                  <option value="Emergency">Emergency</option>
+                  <option value="Pharmacy">Pharmacy</option>
+                  <option value="Laboratory">Laboratory</option>
+                  <option value="Administration">Administration</option>
+                </select>
+              </div>
+              <div class="filter-group filter-count-group">
+                <label>&nbsp;</label>
+                <span class="badge-status confirmed" style="font-size:0.85rem;padding:8px 16px;" id="scheduleCount">0</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Staff ID</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Shift Timing</th>
+                    <th>Working Days</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="scheduleTableBody">
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -335,10 +410,10 @@
       </div>
 
       <div class="form-group">
-        <label>Username / Email</label>
+        <label>Email Address</label>
         <div class="search-input-wrap">
           <span class="material-icons-round">alternate_email</span>
-          <input type="text" id="staffUsername" required placeholder="john.doe" />
+          <input type="email" id="staffEmail" required placeholder="john.doe@wellness.com" />
         </div>
       </div>
 
@@ -433,10 +508,10 @@
       </div>
 
       <div class="form-group">
-        <label>Username / Email</label>
+        <label>Email Address</label>
         <div class="search-input-wrap">
           <span class="material-icons-round">alternate_email</span>
-          <input type="text" id="editStaffUsername" required />
+          <input type="email" id="editStaffEmail" required />
         </div>
       </div>
 
@@ -446,6 +521,83 @@
         <button type="submit" class="btn-primary">Save Changes</button>
       </div>
     </form>
+  </div>
+
+  <!-- Schedule Side Drawer -->
+  <div class="modal-overlay" id="scheduleOverlay"
+    onclick="closeModal(event, 'scheduleOverlay'); document.getElementById('scheduleModal').classList.remove('active');">
+  </div>
+  <div class="modal" id="scheduleModal">
+    <div class="modal-header">
+      <h2>Edit Staff Schedule</h2>
+      <button class="btn-icon"
+        onclick="document.getElementById('scheduleModal').classList.remove('active'); document.getElementById('scheduleOverlay').classList.remove('active'); document.body.style.overflow = '';">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+
+    <form id="scheduleForm" class="admin-form">
+      <input type="hidden" id="schedStaffId" />
+      <div class="form-group">
+        <label>Staff Member</label>
+        <p style="font-size:1.1rem;font-weight:700;" id="schedStaffName">--</p>
+      </div>
+
+      <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="form-group">
+          <label>Shift Start</label>
+          <input type="time" id="schedShiftStart" required />
+        </div>
+        <div class="form-group">
+          <label>Shift End</label>
+          <input type="time" id="schedShiftEnd" required />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Working Days</label>
+        <div class="days-chip-grid">
+          <button type="button" class="day-chip-select active" data-day="Monday" onclick="toggleDayChip(this)">Mon</button>
+          <button type="button" class="day-chip-select active" data-day="Tuesday" onclick="toggleDayChip(this)">Tue</button>
+          <button type="button" class="day-chip-select active" data-day="Wednesday" onclick="toggleDayChip(this)">Wed</button>
+          <button type="button" class="day-chip-select active" data-day="Thursday" onclick="toggleDayChip(this)">Thu</button>
+          <button type="button" class="day-chip-select active" data-day="Friday" onclick="toggleDayChip(this)">Fri</button>
+          <button type="button" class="day-chip-select" data-day="Saturday" onclick="toggleDayChip(this)">Sat</button>
+          <button type="button" class="day-chip-select" data-day="Sunday" onclick="toggleDayChip(this)">Sun</button>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="margin-top: auto; padding-top: 30px;">
+        <button type="button" class="btn-secondary"
+          onclick="document.getElementById('scheduleModal').classList.remove('active'); document.getElementById('scheduleOverlay').classList.remove('active'); document.body.style.overflow = '';">Cancel</button>
+        <button type="submit" class="btn-primary">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Head of Staff Assign Modal -->
+  <div class="modal-overlay" id="hosOverlay"
+    onclick="closeHosOverlay(event)">
+    <div class="modal" id="hosModal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Assign Head of Staff</h2>
+        <button class="btn-icon" onclick="closeHosModal()">
+          <span class="material-icons-round">close</span>
+        </button>
+      </div>
+
+      <form id="hosForm" class="admin-form">
+        <div class="form-group">
+          <label>Select Staff Member (non-doctor, active)</label>
+          <select id="hosStaffSelect" required></select>
+        </div>
+        <p style="font-size:0.82rem;color:var(--on-surface-var);">The selected staff will be Head of Staff for the current week. They will be replaced automatically next week.</p>
+        <div class="modal-footer" style="margin-top: auto; padding-top: 30px;">
+          <button type="button" class="btn-secondary" onclick="closeHosModal()">Cancel</button>
+          <button type="submit" class="btn-primary">Assign</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script type="module" src="js/firebase-init.js"></script>

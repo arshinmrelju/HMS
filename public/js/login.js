@@ -8,6 +8,21 @@ document.getElementById('togglePw')?.addEventListener('click', () => {
   pwIcon.textContent = isText ? 'visibility' : 'visibility_off';
 });
 
+document.getElementById('forgotPwLink')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim();
+  if (!email) {
+    alert('Please enter your email address first, then click "Forgot password?".');
+    return;
+  }
+  try {
+    await window.sendFirebasePasswordReset(email);
+    alert('Password reset email sent. Check your inbox (and spam folder).');
+  } catch (err) {
+    alert(err.message || 'Failed to send reset email.');
+  }
+});
+
 document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = document.getElementById('email').value.trim();

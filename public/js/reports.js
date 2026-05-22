@@ -143,9 +143,106 @@ function exportTxnToCSV() {
   toast('Transaction ledger exported to CSV.', 'success');
 }
 
+function syncPhonePeHistory() {
+  var btn = document.getElementById('syncBtn');
+  var progressWrap = document.getElementById('syncProgressWrap');
+  var progressFill = document.getElementById('syncProgressFill');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-icons-round">sync</span> Syncing...'; }
+  if (progressWrap) progressWrap.style.display = 'block';
+  addConsoleLog('INFO', 'Initiating PhonePe transaction sync...');
+  addConsoleLog('WARN', 'This is a simulation. Connect to PhonePe API in production.');
+
+  var step = 0;
+  var totalSteps = 5;
+  var interval = setInterval(function() {
+    step++;
+    var pct = Math.round((step / totalSteps) * 100);
+    if (progressFill) progressFill.style.width = pct + '%';
+    var messages = [
+      'Authenticating with PhonePe gateway...',
+      'Fetching recent transactions...',
+      'Reconciling with local records...',
+      'Updating settlement statuses...',
+      'Sync complete!'
+    ];
+    addConsoleLog('INFO', '[' + step + '/' + totalSteps + '] ' + messages[step - 1]);
+    if (step >= totalSteps) {
+      clearInterval(interval);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round">sync</span> Sync PhonePe History'; }
+      if (progressWrap) progressWrap.style.display = 'none';
+
+      // Add a mock transaction for demonstration
+      var mockTxn = {
+        id: 'PP-' + String(Date.now()).slice(-8),
+        patientName: 'Demo Patient',
+        patientId: 'WM-001',
+        vpa: 'demo@phonepe',
+        amount: Math.round(Math.random() * 5000) + 500,
+        time: new Date().toISOString(),
+        app: 'PhonePe',
+        status: 'SUCCESS'
+      };
+      transactionList.unshift(mockTxn);
+      saveTransactions();
+      renderTxnTable();
+      updateKPIs();
+      updateCharts();
+      addConsoleLog('SUCCESS', 'Sync completed. ' + transactionList.length + ' transactions in ledger.');
+      toast('PhonePe history sync completed!', 'success', 'sync');
+    }
+  }, 800);
+}
+
+
+function toggleApiSettings() {
+  const form = document.getElementById('phonepeSettingsForm');
+  const toggle = document.getElementById('apiSettingsToggle');
+  if (!form || !toggle) return;
+  const isHidden = form.hidden;
+  form.hidden = !isHidden;
+  toggle.querySelector('.material-icons-round:last-child').textContent = isHidden ? 'expand_less' : 'expand_more';
+}
+
+function saveApiKeys(e) {
+  e.preventDefault();
+  const config = {
+    merchantId: document.getElementById('phonepeMerchantId').value,
+    saltKey: document.getElementById('phonepeSaltKey').value,
+    saltIndex: document.getElementById('phonepeSaltIndex').value,
+    endpoint: document.getElementById('phonepeEndpoint').value
+  };
+  localStorage.setItem('hms_phonepe_config', JSON.stringify(config));
+  toast('API configuration saved to local storage', 'success', 'save');
+  addConsoleLog('INFO', 'PhonePe API config saved (LOCAL STORAGE — not live).');
+}
+
+function loadApiConfig() {
+  const saved = localStorage.getItem('hms_phonepe_config');
+  if (!saved) return;
+  try {
+    const config = JSON.parse(saved);
+    const mid = document.getElementById('phonepeMerchantId');
+    const salt = document.getElementById('phonepeSaltKey');
+    const idx = document.getElementById('phonepeSaltIndex');
+    const ep = document.getElementById('phonepeEndpoint');
+    if (mid) mid.value = config.merchantId || '';
+    if (salt) salt.value = config.saltKey || '';
+    if (idx) idx.value = config.saltIndex || '';
+    if (ep) ep.value = config.endpoint || '';
+  } catch (e) { /* ignore */ }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   renderTxnTable();
   updateKPIs();
   updateCharts();
   addConsoleLog('INFO', 'Reports module initialized. UPI configuration must be done server-side in production.');
+
+  const apiToggle = document.getElementById('apiSettingsToggle');
+  if (apiToggle) apiToggle.addEventListener('click', toggleApiSettings);
+
+  const apiForm = document.getElementById('phonepeSettingsForm');
+  if (apiForm) apiForm.addEventListener('submit', saveApiKeys);
+
+  loadApiConfig();
 });

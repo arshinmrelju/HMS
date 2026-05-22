@@ -175,7 +175,7 @@ function renderDoctorSchedule() {
 }
 
 /* --- Patient Check-In (from modal) --- */
-function checkInPatient() {
+async function checkInPatient() {
   const name = document.getElementById('ciName')?.value.trim();
   const age = document.getElementById('ciAge')?.value.trim() || 'N/A';
   const doctor = document.getElementById('ciDoctor')?.value;
@@ -185,16 +185,29 @@ function checkInPatient() {
   if (!name) { toast('Please enter the patient name.', 'warning'); return; }
 
   const nextToken = OPD_QUEUE.length + 1;
-  OPD_QUEUE.push({
+  const record = {
     token: nextToken,
     name,
     age,
     doctor,
     complaint,
     status: priority,
+    type: 'OPD',
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: new Date().toISOString()
-  });
+    timestamp: new Date().toISOString(),
+    createdAt: window.firebaseFS?.serverTimestamp?.() || new Date().toISOString()
+  };
+  OPD_QUEUE.push(record);
+
+  // Persist to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs) {
+      await fs.addDoc(fs.collection(window.firebaseDb, 'appointments'), record);
+    }
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not save check-in to Firestore: ' + e.message);
+  }
 
   renderOpdQueue();
   closeModal(null, 'checkInModal');
@@ -209,7 +222,7 @@ function checkInPatient() {
 }
 
 /* --- Book Appointment --- */
-function bookAppointment(e) {
+async function bookAppointment(e) {
   e.preventDefault();
   const patient = document.getElementById('apptPatient')?.value.trim();
   const doctor = document.getElementById('apptDoctor')?.value;
@@ -218,6 +231,24 @@ function bookAppointment(e) {
   const type = document.getElementById('apptType')?.value;
 
   if (!patient) { toast('Please enter patient name.', 'warning'); return; }
+
+  // Persist to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs) {
+      await fs.addDoc(fs.collection(window.firebaseDb, 'appointments'), {
+        patientName: patient,
+        doctor,
+        date: date || new Date().toISOString().split('T')[0],
+        time: time || '—',
+        type: type || 'Check-up',
+        status: 'scheduled',
+        createdAt: fs.serverTimestamp?.() || new Date().toISOString()
+      });
+    }
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not save appointment to Firestore: ' + e.message);
+  }
 
   toast(`Appointment confirmed! ${patient} → ${doctor} on ${date || 'Today'} at ${time}`, 'success', 'event_available');
 
@@ -249,8 +280,80 @@ const s = document.createElement('style');
 s.textContent = wardBtnStyle;
 document.head.appendChild(s);
 
+/* --- Firestore Data Loaders --- */
+async function loadOpdQueueFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'appointments'), fs.where('type', '==', 'OPD'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
+    const snap = await fs.getDocs(q);
+    if (snap.empty) return;
+    OPD_QUEUE = snap.docs.map((d, i) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        token: data.token || i + 1,
+        name: data.patientName || 'Unknown',
+        age: data.patientAge || 'N/A',
+        doctor: data.doctor || 'Unassigned',
+        complaint: data.complaint || '—',
+        status: data.status || 'waiting',
+        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
+        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString()
+      };
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load OPD queue from Firestore: ' + e.message);
+  }
+}
+
+async function loadDoctorScheduleFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const snap = await fs.getDocs(fs.collection(window.firebaseDb, 'staff_schedules'));
+    if (snap.empty) return;
+    DOCTOR_SCHEDULE = [];
+    snap.forEach(d => {
+      const data = d.data();
+      const name = data.name || d.id;
+      const parts = name.split(' ');
+      DOCTOR_SCHEDULE.push({
+        initials: parts.map(n => n[0]).join('').toUpperCase().slice(0, 2),
+        name,
+        dept: data.dept || data.department || 'General',
+        slots: (data.slots || data.shifts || []).map(s => ({
+          time: s.time || s,
+          type: s.type || 'morning'
+        }))
+      });
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load doctor schedule: ' + e.message);
+  }
+}
+
+async function loadWardsFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const snap = await fs.getDocs(fs.collection(window.firebaseDb, 'wards'));
+    snap.forEach(d => {
+      const data = d.data();
+      WARDS[data.name || d.id] = (data.beds || []).map(b => ({
+        num: b.num || b.number || b,
+        status: b.status || 'available'
+      }));
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load wards from Firestore: ' + e.message);
+  }
+}
+
 /* --- DOMContentLoaded --- */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await Promise.all([loadOpdQueueFromFirestore(), loadDoctorScheduleFromFirestore(), loadWardsFromFirestore()]);
+
   const todayChip = document.querySelector(`#opdSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
     sfChipSelect(todayChip, 'opd', 'today');
@@ -265,6 +368,4 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set today's date as default for appointment form
   const dateEl = document.getElementById('apptDate');
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
-
-  // New patient arrivals will come from Firestore
 });

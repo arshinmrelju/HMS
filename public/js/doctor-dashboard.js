@@ -250,7 +250,36 @@ function markConsultDone(patientId) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+async function loadPatientQueueFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'appointments'), fs.where('status', 'in', ['waiting', 'in-progress']), fs.orderBy('createdAt', 'asc'));
+    const snap = await fs.getDocs(q);
+    if (snap.empty) return;
+    PATIENT_QUEUE = snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.patientName || 'Unknown',
+        age: data.patientAge || 'N/A',
+        gender: data.patientGender || '',
+        complaint: data.complaint || '—',
+        priority: data.priority || 'normal',
+        status: data.status || 'waiting',
+        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
+        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+        vitals: data.vitals || { bp: '120/80', pulse: '72', temp: '98.6°F', spo2: '98%' },
+        history: data.history || 'No known history recorded.'
+      };
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load patient queue: ' + e.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadPatientQueueFromFirestore();
   const todayChip = document.querySelector(`#docSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
     sfChipSelect(todayChip, 'doc', 'today');

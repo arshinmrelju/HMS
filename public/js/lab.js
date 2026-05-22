@@ -37,9 +37,11 @@ function statusClass(s) {
 }
 function capStatus(s) { return {ordered:'Ordered',processing:'Processing',ready:'Ready',critical:'Critical'}[s]||s; }
 
-function updateLabStatus(id, newStatus) {
+async function updateLabStatus(id, newStatus) {
   const o = LAB_ORDERS.find(x => x.id === id);
-  if (o) { o.status = newStatus; renderLabTable(); toast(`${id} marked as ${capStatus(newStatus)}`, 'success'); }
+  if (o) { o.status = newStatus; renderLabTable();
+    try { const fs = window.firebaseDb && window.firebaseFS; if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'lab_orders', id), { status: newStatus }); } catch (e) { /* ignore */ }
+    toast(`${id} marked as ${capStatus(newStatus)}`, 'success'); }
 }
 
 function filterLabStatus(btn, status) {
@@ -137,21 +139,29 @@ function renderLabReports() {
   `).join('');
 }
 
-function submitOrderTest(e) {
+async function submitOrderTest(e) {
   e.preventDefault();
   const patient = document.getElementById('labPatient').value;
   const selected = [...document.querySelectorAll('input[name="tests"]:checked')].map(i => i.value);
   if (!selected.length) { toast('Select at least one test', 'warning'); return; }
-  selected.forEach(test => {
+  const doctor = document.getElementById('labDoctor').value;
+  const priority = document.getElementById('labPriority').value;
+  const fs = window.firebaseDb && window.firebaseFS;
+  for (const test of selected) {
+    const docData = {
+      patientName: patient, testType: test, doctor,
+      status: 'ordered', priority,
+      createdAt: fs?.serverTimestamp?.() || new Date().toISOString()
+    };
+    let docRef;
+    try { if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'lab_orders'), docData); } catch (e) { addConsoleLog('WARN', 'Failed to save lab order: ' + e.message); }
     LAB_ORDERS.unshift({
-      id: `LAB${String(LAB_ORDERS.length+1).padStart(3,'0')}`,
-      patient, type: test,
-      doctor: document.getElementById('labDoctor').value,
+      id: docRef?.id || `LAB${String(LAB_ORDERS.length+1).padStart(3,'0')}`,
+      patient, type: test, doctor,
       time: new Date().toTimeString().slice(0,5),
-      status: 'ordered',
-      priority: document.getElementById('labPriority').value
+      status: 'ordered', priority
     });
-  });
+  }
   renderLabTable();
   closeModal(null,'orderTestModal');
   toast(`${selected.length} test(s) ordered for ${patient}!`, 'success');
@@ -259,7 +269,7 @@ function initPatientAutocomplete() {
 
   function renderOptions(query = '') {
     const q = query.toLowerCase();
-    const filtered = PATIENTS_DB.filter(p => 
+    const patientSource = (window.allPatients && window.allPatients.length > 0) ? window.allPatients : PATIENTS_DB; const filtered = patientSource.filter(p => 
       p.name.toLowerCase().includes(q) || p.phone.includes(q)
     );
 
@@ -302,7 +312,45 @@ function initPatientAutocomplete() {
   };
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+async function loadLabOrdersFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const q = fs.query(fs.collection(window.firebaseDb, 'lab_orders'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
+    const snap = await fs.getDocs(q);
+    if (snap.empty) return;
+    snap.forEach(d => {
+      const data = d.data();
+      const order = {
+        id: d.id,
+        patient: data.patientName || data.patient || 'Unknown',
+        type: data.test || data.testType || 'General',
+        doctor: data.doctor || data.referredBy || '—',
+        time: data.createdAt?.toDate?.()?.toLocaleString?.() || data.time || '—',
+        status: data.status || 'ordered',
+        priority: data.priority || 'routine'
+      };
+      LAB_ORDERS.push(order);
+      // If the order has results, add to LAB_RESULTS
+      if (data.results && Object.keys(data.results).length > 0) {
+        const resultVals = Object.entries(data.results).map(([k, v]) => ({
+          name: k.toUpperCase(), val: v,
+          ref: '—',
+          flag: data.critical ? 'high' : 'normal'
+        }));
+        LAB_RESULTS.push({
+          id: d.id, patient: order.patient, type: order.type,
+          values: resultVals
+        });
+      }
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load lab orders: ' + e.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadLabOrdersFromFirestore();
   renderLabTable();
   renderLabResults();
   renderLabReports();

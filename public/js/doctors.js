@@ -89,13 +89,15 @@ function endConsultation() {
   resetConsultationForm();
 }
 
-function submitConsultation() {
+async function submitConsultation() {
   const diagnosis = document.getElementById('cDiagnosis')?.value;
   if (!diagnosis) { toast('Please enter a diagnosis.', 'error'); return; }
 
   if (activeConsultationPatient) {
     const apt = TODAY_APPOINTMENTS.find(a => a.patient === activeConsultationPatient && a.status === 'waiting');
-    if (apt) { apt.status = 'completed'; renderAppointments(); }
+    if (apt) { apt.status = 'completed'; renderAppointments();
+      try { const fs = window.firebaseDb && window.firebaseFS; if (fs && apt.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'appointments', apt.id), { status: 'completed', diagnosis }); } catch (e) { /* ignore */ }
+    }
   }
 
   toast(`Consultation completed for ${activeConsultationPatient}.`, 'success');
@@ -200,4 +202,81 @@ function removeLabRow(btn) {
   else { const input = row.querySelector('.lab-name'); if (input) input.value = ''; }
 }
 
-document.addEventListener('DOMContentLoaded', initWorkspace);
+function searchMedicine() {
+  var q = document.getElementById('medSearch')?.value.trim().toLowerCase() || '';
+  var list = document.getElementById('medResultsList');
+  if (!list) return;
+  if (!q) {
+    list.innerHTML = '<p style="text-align:center;padding:16px;color:var(--outline);font-size:.82rem">Start typing to search pharmacy inventory...</p>';
+    return;
+  }
+  var inventory = [];
+  try {
+    var raw = localStorage.getItem('hms_inventory');
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) inventory = parsed;
+    }
+  } catch(e) {}
+  var matches = inventory.filter(function(m) {
+    var name = String(m.name || m.medName || m.medicineName || m.itemName || '').toLowerCase();
+    var cat = String(m.cat || m.category || '').toLowerCase();
+    return name.indexOf(q) !== -1 || cat.indexOf(q) !== -1;
+  });
+  if (matches.length === 0) {
+    list.innerHTML = '<p style="text-align:center;padding:16px;color:var(--outline);font-size:.82rem">No medicines found.</p>';
+    return;
+  }
+  list.innerHTML = matches.map(function(m) {
+    var name = m.name || m.medName || '';
+    var cat = m.cat || m.category || '';
+    var price = Number(m.price || 0).toFixed(2);
+    var stock = m.stock || 0;
+    var rop = m.reorderPoint || 10;
+    var stockLabel, stockColor;
+    if (stock <= 0) { stockLabel = 'Out of Stock'; stockColor = 'var(--accent-red)'; }
+    else if (stock <= rop) { stockLabel = 'Low Stock'; stockColor = 'var(--accent-amber)'; }
+    else { stockLabel = 'In Stock'; stockColor = 'var(--accent-green)'; }
+    return '<div class="med-result-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--surface-mid)">' +
+      '<div><strong>' + name + '</strong><br><span style="font-size:.75rem;color:var(--on-surface-var)">' + cat + ' \u00B7 \u20B9' + price + '</span></div>' +
+      '<span style="font-size:.78rem;font-weight:600;color:' + stockColor + '">' + stockLabel + ' (' + stock + ' units)</span>' +
+    '</div>';
+  }).join('');
+}
+
+
+async function loadTodayAppointments() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const q = fs.query(
+      fs.collection(window.firebaseDb, 'appointments'),
+      fs.where('createdAt', '>=', today),
+      fs.where('createdAt', '<', tomorrow),
+      fs.orderBy('createdAt', 'asc')
+    );
+    const snap = await fs.getDocs(q);
+    if (snap.empty) return;
+    TODAY_APPOINTMENTS = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        patient: data.patientName || data.patient || 'Unknown',
+        reason: data.complaint || data.reason || 'Consultation',
+        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
+        status: data.status || 'waiting'
+      };
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load today\'s appointments: ' + e.message);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadTodayAppointments();
+  initWorkspace();
+});
