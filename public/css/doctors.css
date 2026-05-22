@@ -1,0 +1,511 @@
+/* =========================================
+   DOCTOR WORKSPACE STYLES
+   ========================================= */
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.full-height-card {
+  min-height: 500px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--surface-mid);
+  padding-bottom: 12px;
+}
+
+.card-header h2 {
+  font-family: var(--font-head);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+/* --- Appointments List --- */
+.appointment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.apt-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface-low);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--primary-light);
+  transition: all 0.2s;
+}
+
+.apt-item:hover {
+  background: var(--surface-mid);
+  transform: translateX(4px);
+}
+
+.apt-time {
+  font-family: var(--font-head);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  min-width: 75px;
+}
+
+.apt-details {
+  flex: 1;
+}
+
+.apt-patient {
+  font-weight: 600;
+  color: var(--on-surface);
+  margin-bottom: 2px;
+  font-size: 1.05rem;
+}
+
+.apt-reason {
+  font-size: 0.8rem;
+  color: var(--on-surface-var);
+}
+
+.apt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- Pharmacy Lookup Results --- */
+.med-search-wrap {
+  position: relative;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.med-search-wrap .material-icons-round {
+  position: absolute;
+  left: 14px;
+  color: var(--on-surface-var);
+  font-size: 20px;
+}
+
+.med-search-wrap input {
+  width: 100%;
+  padding: 12px 16px 12px 42px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--outline-var);
+  background: var(--surface-mid);
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.med-search-wrap input:focus {
+  outline: none;
+  border-color: var(--primary-light);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15);
+}
+
+.med-results-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px; /* for scrollbar */
+}
+
+.med-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s;
+}
+
+.med-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.med-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.med-name {
+  font-weight: 600;
+  color: var(--on-surface);
+  font-size: 0.95rem;
+}
+
+.med-category {
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+}
+
+.stock-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+.stock-badge.in-stock { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); }
+.stock-badge.low-stock { background: rgba(245, 158, 11, 0.1); color: var(--accent-amber); }
+.stock-badge.out-stock { background: rgba(239, 68, 68, 0.1); color: var(--accent-red); }
+
+/* --- Stats Row --- */
+.stats-card {
+  margin-top: 24px;
+}
+
+.doc-stats-row {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.doc-stat-box {
+  flex: 1;
+  text-align: center;
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.doc-stat-box .material-icons-round {
+  font-size: 26px;
+  margin-bottom: 8px;
+}
+
+.text-blue { color: #3B82F6; }
+.text-green { color: #10B981; }
+.text-amber { color: #F59E0B; }
+.text-red { color: #EF4444; }
+
+.doc-stat-box h3 {
+  font-family: var(--font-head);
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--on-surface);
+  margin-bottom: 2px;
+  line-height: 1;
+}
+
+.doc-stat-box p {
+  font-size: 0.72rem;
+  color: var(--on-surface-var);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 6px;
+}
+
+/* --- Prescription Form Utilities --- */
+.medication-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.c-med-row {
+  position: relative;
+}
+.med-entry-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.med-entry-row input {
+  flex: 1;
+}
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+.btn-icon:hover { background: var(--surface-mid); }
+
+/* =========================================
+   CONSULTATION MODE STYLES
+   ========================================= */
+
+.consultation-mode {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.patient-consult-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+
+.patient-consult-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar-large {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-head);
+}
+
+.consult-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.consultation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .consultation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.consult-col {
+  padding: 24px;
+  min-height: 500px;
+}
+
+.col-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--on-surface);
+  border-bottom: 1px solid var(--surface-mid);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.consult-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--outline-var);
+  background: var(--surface-mid);
+  color: var(--on-surface);
+  font-family: inherit;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.consult-input:focus {
+  outline: none;
+  border-color: var(--primary-light);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15);
+}
+
+.consult-entry {
+  padding: 12px;
+  background: var(--surface-low);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  border-left: 3px solid var(--primary-light);
+}
+
+.consult-col .form-group {
+  margin-bottom: 24px;
+}
+
+/* --- Dosage Toggle Chips --- */
+.dose-chip {
+  flex: 1;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+.dose-chip input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.dose-chip span {
+  display: block;
+  text-align: center;
+  padding: 8px 4px;
+  background: var(--surface-low);
+  border: 1px solid var(--outline-var);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--on-surface-var);
+  transition: all 0.2s;
+}
+.dose-chip:hover span {
+  background: var(--surface-mid);
+  border-color: var(--on-surface-var);
+}
+.dose-chip input:checked + span {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+}
+
+/* --- Medication Autocomplete --- */
+.autocomplete-dropdown {
+  position: static;
+  z-index: 2;
+  width: 100%;
+  max-height: 250px;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  padding: 8px 0;
+  margin-top: 8px;
+  background: #fff;
+  border: 1px solid var(--outline-var);
+  box-shadow: var(--shadow-lg);
+}
+
+.autocomplete-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid var(--surface-mid);
+  border-left: 4px solid transparent;
+}
+
+.autocomplete-item.active-suggestion {
+  background: var(--surface-mid);
+  border-left: 4px solid var(--primary-light);
+  padding-left: 12px;
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.autocomplete-item:hover {
+  background: var(--surface-mid);
+}
+
+.autocomplete-item-stock {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--on-surface-var);
+}
+
+.med-item-out {
+  opacity: 0.6;
+  border-left: 3px solid var(--accent-red) !important;
+}
+
+/* --- Prescription Search Box Styling --- */
+.med-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.med-input-wrap .search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--outline);
+  font-size: 18px;
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.med-input-wrap:focus-within .search-icon {
+  color: var(--primary-light);
+}
+
+.med-input-wrap input.med-name {
+  padding-left: 38px !important;
+  cursor: text;
+}
+
+.med-input-wrap input.med-name::placeholder {
+  color: #66736f;
+}
+
+.med-match-status {
+  min-height: 0;
+}
+
+.med-match-pill {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.med-match-pill.in-stock {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: var(--accent-green);
+}
+
+.med-match-pill.low-stock {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: var(--accent-amber);
+}
+
+.med-match-pill.out-stock {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: var(--accent-red);
+}

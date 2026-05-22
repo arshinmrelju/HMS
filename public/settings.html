@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings – Wellness Medicals HMS</title>
+  <link rel="icon" type="image/jpeg" href="assets/hms-logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <style>
+    .settings-grid { display: grid; grid-template-columns: 240px 1fr; gap: 24px; }
+    .settings-nav { display: flex; flex-direction: column; gap: 4px; }
+    .settings-nav-item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: var(--radius-md); cursor: pointer; font-weight: 600; font-size: .875rem; color: var(--on-surface-var); transition: all .15s; }
+    .settings-nav-item:hover { background: var(--surface-low); color: var(--primary-light); }
+    .settings-nav-item.active { background: var(--primary-soft); color: var(--primary-light); }
+    .settings-nav-item .material-icons-round { font-size: 20px; }
+    .settings-panel { display: none; }
+    .settings-panel.active { display: block; }
+    .settings-section { margin-bottom: 32px; }
+    .settings-section h3 { font-family: var(--font-head); font-size: 1rem; font-weight: 700; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--outline-var); }
+    .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 0; border-bottom: 1px solid var(--surface-mid); }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-info { flex: 1; }
+    .setting-info strong { display: block; font-size: .9rem; font-weight: 600; }
+    .setting-info p { font-size: .8rem; color: var(--on-surface-var); margin-top: 2px; }
+    .toggle-switch { position: relative; width: 44px; height: 24px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-track { position: absolute; inset: 0; background: var(--surface-high); border-radius: 9999px; cursor: pointer; transition: background .2s; }
+    .toggle-switch input:checked + .toggle-track { background: var(--primary-light); }
+    .toggle-track::after { content:''; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff; top: 3px; left: 3px; transition: transform .2s; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+    .toggle-switch input:checked + .toggle-track::after { transform: translateX(20px); }
+    .profile-avatar-large { width: 80px; height: 80px; background: linear-gradient(135deg, var(--primary-light), #2DD4BF); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--font-head); font-size: 1.8rem; font-weight: 800; color: #fff; }
+    @media (max-width: 768px) { .settings-grid { grid-template-columns: 1fr; } .settings-nav { flex-direction: row; flex-wrap: wrap; } }
+  </style>
+</head>
+<body class="app-body">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="assets/hms-logo.jpg" alt="Wellness Medicals Logo" class="brand-icon" />
+      <div class="brand-text"><span class="brand-title">Wellness</span><span class="brand-sub">Medicals HMS</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.html" class="nav-item" id="nav-dashboard"><span class="material-icons-round">dashboard</span><span class="nav-label">Dashboard</span></a>
+      <a href="patients.html" class="nav-item" id="nav-patients"><span class="material-icons-round">groups</span><span class="nav-label">Patients</span></a>
+      <a href="appointments.html" class="nav-item" id="nav-appointments"><span class="material-icons-round">event</span><span class="nav-label">Appointments</span></a>
+      <a href="doctors.html" class="nav-item" id="nav-doctors"><span class="material-icons-round">medical_services</span><span class="nav-label">Doctors</span></a>
+      <a href="pharmacy.html" class="nav-item" id="nav-pharmacy"><span class="material-icons-round">medication</span><span class="nav-label">Pharmacy</span></a>
+      <a href="lab.html" class="nav-item" id="nav-lab"><span class="material-icons-round">biotech</span><span class="nav-label">Lab</span></a>
+      <a href="reports.html" class="nav-item" id="nav-reports"><span class="material-icons-round">analytics</span><span class="nav-label">Reports</span></a>
+      <a href="administration.html" class="nav-item" id="nav-admin" style="display: none;"><span class="material-icons-round">admin_panel_settings</span><span class="nav-label">Administration</span></a>
+      <div class="nav-divider"></div>
+      <a href="settings.html" class="nav-item active" id="nav-settings"><span class="material-icons-round">settings</span><span class="nav-label">Settings</span></a>
+    </nav>
+        <!-- Techsiah Branding -->
+    <a href="https://techsiah.web.app" target="_blank" class="techsiah-badge">
+      <span class="techsiah-label">Powered by</span>
+      <svg class="logo-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="techsiah-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#2563EB" />
+            <stop offset="100%" stop-color="#3B82F6" />
+          </linearGradient>
+        </defs>
+        <path d="M6 10C6 7.79086 7.79086 6 10 6H22C24.2091 6 26 7.79086 26 10V22C26 24.2091 24.2091 26 22 26H10C7.79086 26 6 24.2091 6 22V10Z" stroke="url(#techsiah-grad)" stroke-width="2.5" stroke-linecap="round" />
+        <path d="M12 11H20" stroke="url(#techsiah-grad)" stroke-width="2.5" stroke-linecap="round" />
+        <path d="M16 11V21" stroke="url(#techsiah-grad)" stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="21" cy="21" r="2" fill="#2563EB" />
+      </svg>
+      <span class="techsiah-text">Techsiah<span class="techsiah-dot">.</span></span>
+    </a>
+<div class="sidebar-user">
+      <div class="user-avatar" id="userAvatar">DS</div>
+      <div class="user-info"><span class="user-name" id="sidebarUserName">Dr. Sarah Mitchell</span><span class="user-role" id="sidebarUserRole">Chief Surgeon · Admin</span></div>
+      <button class="logout-btn" id="logoutBtn"><span class="material-icons-round">logout</span></button>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <div class="main-content">
+    <header class="topbar">
+      <button class="menu-toggle" id="menuToggle"><span class="material-icons-round">menu</span></button>
+      <div class="topbar-search"><span class="material-icons-round search-icon">search</span><input type="text" placeholder="Search settings…" /></div>
+      <div class="topbar-actions">
+        <button class="topbar-btn"><span class="material-icons-round">notifications</span><span class="badge">3</span></button>
+        <div class="topbar-avatar" id="topbarAvatar">DS</div>
+      </div>
+    </header>
+
+    <main class="page-body">
+      <div class="page-header">
+        <div><h1 class="page-title">Settings</h1><p class="page-sub">Manage your account and hospital system preferences</p></div>
+        <button class="btn-primary" onclick="saveSettings()"><span class="material-icons-round">save</span> Save Changes</button>
+      </div>
+
+      <div class="settings-grid">
+        <!-- Settings Nav -->
+        <div class="widget glass-card" style="padding:16px;align-self:start">
+          <div class="settings-nav">
+            <div class="settings-nav-item active" onclick="showSettingsPanel('profile', this)"><span class="material-icons-round">person</span>Profile</div>
+            <div class="settings-nav-item" onclick="showSettingsPanel('hospital', this)"><span class="material-icons-round">local_hospital</span>Hospital</div>
+            <div class="settings-nav-item" onclick="showSettingsPanel('notifications', this)"><span class="material-icons-round">notifications</span>Notifications</div>
+            <div class="settings-nav-item" onclick="showSettingsPanel('security', this)"><span class="material-icons-round">security</span>Security</div>
+            <div class="settings-nav-item" onclick="showSettingsPanel('appearance', this)"><span class="material-icons-round">palette</span>Appearance</div>
+            <div class="settings-nav-item" onclick="showSettingsPanel('billing_cfg', this)"><span class="material-icons-round">receipt_long</span>Billing Config</div>
+          </div>
+        </div>
+
+        <!-- Panels -->
+        <div class="widget glass-card" style="padding:28px">
+          <!-- Profile -->
+          <div class="settings-panel active" id="panel-profile">
+            <div class="settings-section">
+              <h3>Personal Information</h3>
+              <div style="display:flex;gap:20px;align-items:center;margin-bottom:20px">
+                <div class="profile-avatar-large" id="profileAvatarLg">DS</div>
+                <div>
+                  <button class="btn-secondary btn-sm">Change Photo</button>
+                  <p style="font-size:.75rem;color:var(--on-surface-var);margin-top:6px">JPG or PNG, max 2MB</p>
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="form-group"><label>First Name</label><input type="text" id="settingFirstName" value="Sarah" /></div>
+                <div class="form-group"><label>Last Name</label><input type="text" id="settingLastName" value="Mitchell" /></div>
+              </div>
+              <div class="form-row-2" style="margin-top:16px">
+                <div class="form-group"><label>Email</label><input type="email" id="settingEmail" value="s.mitchell@wellness.com" /></div>
+                <div class="form-group"><label>Phone</label><input type="tel" id="settingPhone" value="+91 9876543210" /></div>
+              </div>
+              <div class="form-row-2" style="margin-top:16px">
+                <div class="form-group"><label>Designation</label><input type="text" id="settingTitle" value="Chief Surgeon" /></div>
+                <div class="form-group"><label>Department</label>
+                  <select id="settingDept"><option>General Surgery</option><option>Cardiology</option><option>Neurology</option><option>Pediatrics</option></select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hospital -->
+          <div class="settings-panel" id="panel-hospital">
+            <div class="settings-section">
+              <h3>Hospital Information</h3>
+              <div class="form-group"><label>Hospital Name</label><input type="text" value="Wellness Medicals" /></div>
+              <div class="form-row-2" style="margin-top:16px">
+                <div class="form-group"><label>Registration Number</label><input type="text" value="MH/HOSP/2018/042" /></div>
+                <div class="form-group"><label>Phone</label><input type="tel" value="+91 22 4567 8900" /></div>
+              </div>
+              <div class="form-group" style="margin-top:16px"><label>Address</label><textarea rows="2">123, Healthcare Avenue, Bandra West, Mumbai 400050</textarea></div>
+            </div>
+            <div class="settings-section">
+              <h3>Operational Settings</h3>
+              <div class="setting-row">
+                <div class="setting-info"><strong>OPD Hours</strong><p>Set outpatient department working hours</p></div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input type="time" class="filter-select" value="08:00" style="width:110px" />
+                  <span style="font-size:.82rem;color:var(--on-surface-var)">to</span>
+                  <input type="time" class="filter-select" value="20:00" style="width:110px" />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info"><strong>Emergency Services</strong><p>24/7 emergency department availability</p></div>
+                <label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="settings-panel" id="panel-notifications">
+            <div class="settings-section">
+              <h3>Notification Preferences</h3>
+              <div class="setting-row"><div class="setting-info"><strong>Critical Patient Alerts</strong><p>Receive alerts for critical patient status changes</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Appointment Reminders</strong><p>Reminders for upcoming appointments</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Lab Results Ready</strong><p>Alert when laboratory results are available</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Low Stock Alerts</strong><p>Pharmacy inventory low stock notifications</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>System Updates</strong><p>Updates about HMS system changes</p></div><label class="toggle-switch"><input type="checkbox" /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Email Notifications</strong><p>Send a copy of all alerts to your email</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+            </div>
+          </div>
+
+          <!-- Security -->
+          <div class="settings-panel" id="panel-security">
+            <div class="settings-section">
+              <h3>Change Password</h3>
+              <div class="form-group"><label>Current Password</label><input type="password" placeholder="••••••••" /></div>
+              <div class="form-row-2" style="margin-top:16px">
+                <div class="form-group"><label>New Password</label><input type="password" placeholder="••••••••" /></div>
+                <div class="form-group"><label>Confirm Password</label><input type="password" placeholder="••••••••" /></div>
+              </div>
+              <button class="btn-primary" style="margin-top:16px" onclick="toast('Password updated!','success')">Update Password</button>
+            </div>
+            <div class="settings-section">
+              <h3>Security Options</h3>
+              <div class="setting-row"><div class="setting-info"><strong>Two-Factor Authentication</strong><p>Add an extra layer of security to your account</p></div><label class="toggle-switch"><input type="checkbox" /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Auto Logout</strong><p>Automatically log out after 30 minutes of inactivity</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Session History</strong><p>Track and manage active login sessions</p></div><button class="btn-secondary btn-sm" onclick="toast('Loading sessions...','info')">View Sessions</button></div>
+            </div>
+          </div>
+
+          <!-- Appearance -->
+          <div class="settings-panel" id="panel-appearance">
+            <div class="settings-section">
+              <h3>Theme & Display</h3>
+              <div class="setting-row"><div class="setting-info"><strong>Dark Mode</strong><p>Switch to dark theme (coming soon)</p></div><label class="toggle-switch"><input type="checkbox" onchange="toast('Dark mode coming soon!','info')" /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Compact View</strong><p>Reduce spacing for more data density</p></div><label class="toggle-switch"><input type="checkbox" /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Animation Effects</strong><p>Enable smooth UI transitions</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+            </div>
+            <div class="settings-section">
+              <h3>Accent Color</h3>
+              <div style="display:flex;gap:12px;flex-wrap:wrap">
+                <div onclick="setAccent('#0D9488')" style="width:36px;height:36px;background:#0D9488;border-radius:50%;cursor:pointer;border:3px solid #0D9488;box-shadow:0 0 0 3px rgba(13,148,136,.3)" title="Teal (Default)"></div>
+                <div onclick="setAccent('#3B82F6')" style="width:36px;height:36px;background:#3B82F6;border-radius:50%;cursor:pointer" title="Blue"></div>
+                <div onclick="setAccent('#8B5CF6')" style="width:36px;height:36px;background:#8B5CF6;border-radius:50%;cursor:pointer" title="Violet"></div>
+                <div onclick="setAccent('#F59E0B')" style="width:36px;height:36px;background:#F59E0B;border-radius:50%;cursor:pointer" title="Amber"></div>
+                <div onclick="setAccent('#EC4899')" style="width:36px;height:36px;background:#EC4899;border-radius:50%;cursor:pointer" title="Pink"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Billing Config -->
+          <div class="settings-panel" id="panel-billing_cfg">
+            <div class="settings-section">
+              <h3>Billing Configuration</h3>
+              <div class="form-row-2">
+                <div class="form-group"><label>Default Consultation Fee (₹)</label><input type="number" value="500" /></div>
+                <div class="form-group"><label>GST Rate (%)</label><input type="number" value="18" /></div>
+              </div>
+              <div class="form-row-2" style="margin-top:16px">
+                <div class="form-group"><label>Currency Symbol</label><input type="text" value="₹" maxlength="3" /></div>
+                <div class="form-group"><label>Invoice Prefix</label><input type="text" value="INV-" /></div>
+              </div>
+              <div class="setting-row" style="margin-top:8px"><div class="setting-info"><strong>Auto-generate Invoice Numbers</strong><p>Sequentially auto-number all invoices</p></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-track"></span></label></div>
+              <div class="setting-row"><div class="setting-info"><strong>Print Invoice on Generation</strong><p>Auto-open print dialog when invoice is created</p></div><label class="toggle-switch"><input type="checkbox" /><span class="toggle-track"></span></label></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="js/firebase-init.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    HMS.requireAuth();
+    function showSettingsPanel(panel, btn) {
+      document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.settings-nav-item').forEach(b => b.classList.remove('active'));
+      document.getElementById(`panel-${panel}`)?.classList.add('active');
+      btn.classList.add('active');
+    }
+    function saveSettings() {
+      const first = document.getElementById('settingFirstName')?.value;
+      const last = document.getElementById('settingLastName')?.value;
+      if (first && last) {
+        const u = HMS.getUser();
+        if (u) { u.name = `${first} ${last}`; HMS.setUser(u); }
+      }
+      toast('Settings saved successfully!', 'success', 'save');
+    }
+    function setAccent(color) {
+      document.documentElement.style.setProperty('--primary-light', color);
+      toast('Accent color updated!', 'success', 'palette');
+    }
+    // Populate settings from user
+    document.addEventListener('DOMContentLoaded', () => {
+      const u = HMS.getUser();
+      if (u) {
+        const parts = (u.name || '').split(' ');
+        if (document.getElementById('settingFirstName')) document.getElementById('settingFirstName').value = parts[0] || '';
+        if (document.getElementById('settingLastName')) document.getElementById('settingLastName').value = parts.slice(1).join(' ') || '';
+        if (document.getElementById('settingTitle')) document.getElementById('settingTitle').value = u.title || '';
+        const initials = parts.map(n=>n[0]).join('').toUpperCase().slice(0,2);
+        const el = document.getElementById('profileAvatarLg');
+        if (el) el.textContent = initials;
+      }
+    });
+  </script>
+</body>
+</html>

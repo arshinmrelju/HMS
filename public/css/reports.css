@@ -1,0 +1,255 @@
+/* =============================================
+   REPORTS.CSS – HMS Reports Module Styles
+   Theme: VitalGlass Ecosystem (High-End Design)
+   ============================================= */
+
+/* Reports Grid Layout */
+.reports-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+@media (max-width: 1024px) {
+  .reports-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stat Cards & KPI Enhancements */
+.stat-card.connected::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent-green);
+  animation: pulseGreen 2s infinite;
+}
+
+@keyframes pulseGreen {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 14px var(--accent-green); }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+
+/* PhonePe API Connection Settings Widget */
+.phonepe-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.api-settings-toggle {
+  background: var(--surface-low);
+  border: 1px solid var(--outline-var);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.api-settings-toggle:hover {
+  background: var(--surface-mid);
+}
+
+.api-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: rgba(13, 148, 136, 0.03);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--outline-var);
+}
+
+.api-console-log {
+  background: #0f172a;
+  border-radius: var(--radius-md);
+  padding: 14px;
+  color: #38bdf8;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.78rem;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.api-console-log .log-entry {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.api-console-log .log-time {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.api-console-log .log-msg {
+  word-break: break-all;
+}
+
+.api-console-log .log-success {
+  color: #4ade80;
+}
+
+.api-console-log .log-warn {
+  color: #f59e0b;
+}
+
+/* Sync Loader Overlay Button */
+.sync-btn-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: var(--surface-low);
+  border-radius: 99px;
+  overflow: hidden;
+  display: none;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-light), #3B82F6);
+  width: 0%;
+  transition: width 0.2s ease;
+}
+
+/* Interactive Patient Simulator Widget */
+.simulator-widget {
+  background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(245,158,11,0.04));
+  border: 1px solid rgba(245,158,11,0.25);
+  box-shadow: 0 4px 30px rgba(245,158,11,0.06);
+}
+
+.simulator-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent-amber);
+  margin-bottom: 12px;
+}
+
+.simulator-header h3 {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.simulator-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.simulator-btn {
+  background: linear-gradient(135deg, #F59E0B, #D97706);
+  color: white;
+  border: none;
+  padding: 11px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(245,158,11,0.3);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.simulator-btn:hover {
+  background: linear-gradient(135deg, #fbbf24, #b45309);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(245,158,11,0.4);
+}
+
+/* Charts Grid */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-container-rep {
+  position: relative;
+  height: 250px;
+  width: 100%;
+}
+
+.donut-container-rep {
+  position: relative;
+  height: 250px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Table Enhancements */
+.txn-id-badge {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: bold;
+  background: var(--surface-low);
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  border: 1px solid var(--outline-var);
+}
+
+.vpa-text {
+  font-size: 0.78rem;
+  color: var(--on-surface-var);
+}
+
+.btn-xs {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+}
+
+/* Print Invoice Overlay styling */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-report, .printable-report * {
+    visibility: visible;
+  }
+  .printable-report {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white;
+    color: black;
+    padding: 30px;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

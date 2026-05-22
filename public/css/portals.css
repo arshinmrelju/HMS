@@ -1,0 +1,81 @@
+/* =========================================================
+   PORTALS.CSS – Role-Bespoke Theme & Layout Overrides
+   Theme: VitalGlass Multi-Portal System Upgrades
+   ========================================================= */
+
+/* =========================================================
+   ROLE COLORS REMOVED: Using default theme for all portals
+   ========================================================= */
+
+/* =========================================================
+   6. DYNAMIC BRAND BADGES
+   ========================================================= */
+.portal-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-width: 1px;
+  border-style: solid;
+  margin-left: 12px;
+}
+
+/* Use default primary colors for brand badge */
+.portal-brand-badge {
+  background: var(--primary-soft);
+  color: var(--primary-light);
+  border-color: var(--primary-soft);
+}
+
+/* Custom enhancements for the portals sidebars */
+.sidebar {
+  border-right: 1.5px solid var(--outline-var) !important;
+  background: var(--glass-bg) !important;
+  backdrop-filter: var(--glass-blur);
+}
+.sidebar-nav .nav-item.active {
+  background: var(--primary-soft) !important;
+  color: var(--primary-light) !important;
+}
+.sidebar-nav .nav-item:hover:not(.active) {
+  background: var(--surface-mid) !important;
+}
+.sidebar-user {
+  background: var(--surface-low) !important;
+  border: 1px solid var(--outline-var) !important;
+}
+.user-avatar {
+  background: linear-gradient(135deg, var(--primary-light), var(--primary-dark)) !important;
+  color: white !important;
+}
+
+/* Page body updates */
+.page-body {
+  position: relative;
+  z-index: 1;
+}
+
+/* Pulse keyframes for diagnostic scan and checkout alerts */
+@keyframes scanningLaser {
+  0% { transform: translateY(0); opacity: 0.3; }
+  50% { transform: translateY(220px); opacity: 1; filter: brightness(1.2); }
+  100% { transform: translateY(0); opacity: 0.3; }
+}
+
+.scanner-laser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--primary-light), transparent);
+  box-shadow: 0 0 10px var(--primary-light), 0 0 20px var(--primary-light);
+  animation: scanningLaser 4s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 5;
+}
