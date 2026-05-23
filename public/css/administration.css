@@ -252,6 +252,24 @@
 }
 
 /* Logs */
+.logs-widget {
+  padding: 20px 24px 8px;
+}
+
+.logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--surface-mid);
+  margin-bottom: 8px;
+}
+
+.logs-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .logs-list {
   list-style: none;
   padding: 0;
@@ -317,7 +335,13 @@
 #hosModal {
   padding: 0;
   max-width: 480px;
+  width: 100%;
   border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .modal-header {

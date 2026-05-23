@@ -122,7 +122,7 @@
 
       <!-- Inventory Tab -->
       <div class="tab-content" id="tab-inventory">
-        <div class="widget glass-card table-widget">
+          <div class="widget glass-card table-widget">
           <div class="table-toolbar">
             <div class="filter-chips">
               <button class="chip active" onclick="filterMedCategory(this,'all')">All</button>
@@ -131,7 +131,16 @@
               <button class="chip" onclick="filterMedCategory(this,'cardiac')">Cardiac</button>
               <button class="chip" onclick="filterMedCategory(this,'vitamins')">Vitamins</button>
             </div>
-            <input type="text" class="filter-select" id="medSearch" placeholder="Filter medicines…" style="width:200px" oninput="filterMedTable()" />
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="text" class="filter-select" id="medSearch" placeholder="Search name, category, rack, batch…" style="width:220px" oninput="filterMedTableRemote()" />
+              <select class="filter-select" id="medStatusFilter" onchange="renderMedTable()" style="width:140px">
+                <option value="all">All Status</option>
+                <option value="in-stock">In Stock</option>
+                <option value="low">Low Stock</option>
+                <option value="out">Out of Stock</option>
+              </select>
+              <button class="chip" onclick="showLowStock()" title="Show low/out of stock items" style="color:var(--accent-amber)">Low Stock <span class="material-icons-round" style="font-size:16px">warning</span></button>
+            </div>
           </div>
           <div class="table-scroll">
             <table class="data-table" id="medTable">
@@ -139,15 +148,18 @@
                 <tr>
                   <th>Medicine</th>
                   <th>Category</th>
+                  <th>Batches</th>
                   <th>Stock</th>
-                  <th>Unit Price</th>
-                  <th>Expiry</th>
+                  <th>Rack</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="medTableBody"></tbody>
             </table>
+          </div>
+          <div id="loadMoreInvContainer" style="text-align:center;padding:12px 0">
+            <button class="btn-secondary btn-sm" onclick="loadMoreInventory()" id="loadMoreInvBtn">Load More</button>
           </div>
         </div>
       </div>
@@ -204,21 +216,22 @@
                 Safety Stock levels and reorder parameters are maintained below. If stock falls below ROP, the system immediately generates a PR.
               </p>
               <div class="table-scroll">
-                <table class="data-table" style="font-size: 0.82rem;">
-                  <thead>
-                    <tr>
-                      <th>Medicine</th>
-                      <th>Current Stock</th>
-                      <th>Safety Stock</th>
-                      <th>ROP Threshold</th>
-                      <th>Reorder Qty</th>
-                      <th>Configure</th>
-                    </tr>
-                  </thead>
-                  <tbody id="ropConfigTableBody">
-                    <!-- Dynamically populated -->
-                  </tbody>
-                </table>
+            <table class="data-table" style="font-size: 0.82rem;">
+              <thead>
+                <tr>
+                  <th>Medicine</th>
+                  <th>Rack</th>
+                  <th>Current Stock</th>
+                  <th>Safety Stock</th>
+                  <th>ROP Threshold</th>
+                  <th>Reorder Qty</th>
+                  <th>Configure</th>
+                </tr>
+              </thead>
+              <tbody id="ropConfigTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
               </div>
             </div>
 
@@ -299,15 +312,55 @@
         <div class="form-group"><label>Medicine Name *</label><input type="text" id="medName" required /></div>
         <div class="form-row-2">
           <div class="form-group"><label>Category</label><select id="medCat"><option>Antibiotics</option><option>Analgesics</option><option>Cardiac</option><option>Vitamins</option><option>Other</option></select></div>
-          <div class="form-group"><label>Stock Quantity *</label><input type="number" id="medStock" required min="0" /></div>
+          <div class="form-group"><label>Rack / Location</label><input type="text" id="medRack" placeholder="e.g. A-12, Shelf-3" /></div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--outline);margin:12px 0;opacity:.3" />
+        <p style="font-size:.82rem;color:var(--on-surface-var);margin-bottom:8px">First Batch Details</p>
+        <div class="form-row-2">
+          <div class="form-group"><label>Batch Number *</label><input type="text" id="medBatchNo" required placeholder="e.g. B2024001" /></div>
+          <div class="form-group"><label>Batch Stock *</label><input type="number" id="medStock" required min="0" /></div>
         </div>
         <div class="form-row-2">
-          <div class="form-group"><label>Unit Price (₹)</label><input type="number" id="medPrice" min="0" step="0.01" /></div>
-          <div class="form-group"><label>Expiry Date</label><input type="date" id="medExpiry" /></div>
+          <div class="form-group"><label>Batch MRP (₹) *</label><input type="number" id="medPrice" required min="0" step="0.01" /></div>
+          <div class="form-group"><label>Batch Expiry *</label><input type="date" id="medExpiry" required /></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn-secondary" onclick="closeModal(null,'addMedModal')">Cancel</button>
           <button type="submit" class="btn-primary">Add to Inventory</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Medicine Modal -->
+  <div class="modal-overlay" id="editMedModal" onclick="closeModal(event,'editMedModal')">
+    <div class="modal glass-card" style="max-width:560px">
+      <div class="modal-header">
+        <h2>Edit Medicine</h2>
+        <button class="modal-close" onclick="closeModal(null,'editMedModal')"><span class="material-icons-round">close</span></button>
+      </div>
+      <form class="modal-form" onsubmit="submitEditMed(event)">
+        <div class="form-group"><label>Medicine Name</label><input type="text" id="editMedName" readonly style="background:var(--surface-mid);cursor:not-allowed" /></div>
+        <div class="form-row-2">
+          <div class="form-group"><label>Category</label><select id="editMedCat"><option>Antibiotics</option><option>Analgesics</option><option>Cardiac</option><option>Vitamins</option><option>Other</option></select></div>
+          <div class="form-group"><label>Rack / Location</label><input type="text" id="editMedRack" placeholder="e.g. A-12, Shelf-3" /></div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--outline);margin:12px 0;opacity:.3" />
+        <p style="font-size:.82rem;color:var(--on-surface-var);margin-bottom:8px">Batches <span id="editBatchCount"></span></p>
+        <div id="editBatchesList" style="max-height:200px;overflow-y:auto;margin-bottom:12px"></div>
+        <button type="button" class="btn-secondary btn-sm" onclick="addEditBatchRow()" style="width:100%">+ Add Batch</button>
+        <hr style="border:none;border-top:1px solid var(--outline);margin:12px 0;opacity:.3" />
+        <div class="form-row-2">
+          <div class="form-group"><label>Safety Stock</label><input type="number" id="editSafetyStock" min="0" /></div>
+          <div class="form-group"><label>Lead Time (days)</label><input type="number" id="editLeadTime" min="1" /></div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group"><label>Avg Daily Usage</label><input type="number" id="editAdu" min="1" /></div>
+          <div class="form-group"><label>Reorder Qty</label><input type="number" id="editReorderQty" min="1" /></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal(null,'editMedModal')">Cancel</button>
+          <button type="submit" class="btn-primary">Save Changes</button>
         </div>
       </form>
     </div>

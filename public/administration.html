@@ -324,22 +324,8 @@
             <h3>Recent System Activity</h3>
             <button class="btn-secondary btn-sm"><span class="material-icons-round">download</span> Export Logs</button>
           </div>
-          <ul class="logs-list">
-            <li class="log-item">
-              <span class="log-time">10:45 AM</span>
-              <span class="log-badge info">LOGIN</span>
-              <p><strong>Admin</strong> logged into the system</p>
-            </li>
-            <li class="log-item">
-              <span class="log-time">09:12 AM</span>
-              <span class="log-badge success">UPDATE</span>
-              <p><strong>Pharmacy</strong> inventory updated by Pharmacist Arshin</p>
-            </li>
-            <li class="log-item">
-              <span class="log-time">08:30 AM</span>
-              <span class="log-badge warning">AUTH</span>
-              <p>Failed login attempt from 192.168.1.45 (Unknown User)</p>
-            </li>
+          <ul class="logs-list" id="logsList">
+            <!-- Populated by JS from Firestore audit_logs -->
           </ul>
         </div>
       </div>

@@ -1,15 +1,23 @@
 'use strict';
 
 HMS.requireAuth();
-const currentUser = HMS.getUser();
 
-if (currentUser && currentUser.role !== 'Admin') {
-  toast('Admin access required.', 'error');
-  setTimeout(() => window.location.href = 'dashboard.html', 1000);
-}
-
-const db = window.firebaseDb;
-const fs = window.firebaseFS;
+(async function checkAdmin() {
+  const u = HMS.getUser();
+  if (u && u.role !== 'Admin') {
+    toast('Admin access required.', 'error');
+    setTimeout(() => window.location.href = 'dashboard.html', 1000);
+    return;
+  }
+  if (!u && window._authReady) {
+    await window._authReady;
+    const user = HMS.getUser();
+    if (!user || user.role !== 'Admin') {
+      toast('Admin access required.', 'error');
+      setTimeout(() => window.location.href = 'dashboard.html', 1000);
+    }
+  }
+})();
 
 let staffList = [];
 let scheduleMap = {};
@@ -66,18 +74,20 @@ function getWeekRange() {
 
 async function loadStaff() {
   try {
-    const snap = await fs.getDocs(fs.query(fs.collection(db, 'staff'), fs.orderBy('createdAt', 'desc')));
+    if (!window.firebaseDb || !window.firebaseFS) { staffList = []; return; }
+    const snap = await window.firebaseFS.getDocs(window.firebaseFS.collection(window.firebaseDb, 'staff'));
     staffList = [];
     snap.forEach(d => staffList.push({ id: d.id, ...d.data() }));
+    const el = document.getElementById('staffCount');
+    if (el) el.textContent = String(staffList.length);
   } catch (e) {
-    console.error('Failed to load staff:', e);
     staffList = [];
   }
 }
 
 async function loadSchedules() {
   try {
-    const snap = await fs.getDocs(fs.collection(db, 'staff_schedules'));
+    const snap = await window.firebaseFS.getDocs(window.firebaseFS.collection(window.firebaseDb, 'staff_schedules'));
     scheduleMap = {};
     snap.forEach(d => { scheduleMap[d.id] = { id: d.id, ...d.data() }; });
   } catch (e) {
@@ -88,8 +98,8 @@ async function loadSchedules() {
 
 async function loadCurrentHeadOfStaff() {
   try {
-    const docSnap = await fs.getDoc(fs.doc(db, 'head_of_staff', 'current'));
-    currentHOS = docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+    const docSnap = await window.firebaseFS.getDoc(window.firebaseFS.doc(window.firebaseDb, 'head_of_staff', 'current'));
+    currentHOS = docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
     if (currentHOS) {
       const week = getWeekRange();
       if (currentHOS.weekEnd < week.start) {
@@ -103,63 +113,63 @@ async function loadCurrentHeadOfStaff() {
 }
 
 async function ensureStaffId() {
-  const snap = await fs.getDocs(fs.collection(db, 'staff'));
+  const snap = await window.firebaseFS.getDocs(window.firebaseFS.collection(window.firebaseDb, 'staff'));
   return `STF${String(snap.size + 1).padStart(3, '0')}`;
 }
 
 async function createStaffInFirestore(staffId, data) {
-  await fs.setDoc(fs.doc(db, 'staff', staffId), {
+  await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'staff', staffId), {
     ...data,
     status: data.status || 'Active',
-    createdAt: fs.serverTimestamp(),
-    updatedAt: fs.serverTimestamp()
+    createdAt: window.firebaseFS.serverTimestamp(),
+    updatedAt: window.firebaseFS.serverTimestamp()
   });
 }
 
 async function updateStaffInFirestore(staffId, data) {
-  await fs.updateDoc(fs.doc(db, 'staff', staffId), {
+  await window.firebaseFS.updateDoc(window.firebaseFS.doc(window.firebaseDb, 'staff', staffId), {
     ...data,
-    updatedAt: fs.serverTimestamp()
+    updatedAt: window.firebaseFS.serverTimestamp()
   });
 }
 
 async function deleteStaffFromFirestore(staffId) {
-  await fs.deleteDoc(fs.doc(db, 'staff', staffId));
+  await window.firebaseFS.deleteDoc(window.firebaseFS.doc(window.firebaseDb, 'staff', staffId));
 }
 
 async function saveSchedule(staffId, data) {
-  await fs.setDoc(fs.doc(db, 'staff_schedules', staffId), {
+  await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'staff_schedules', staffId), {
     ...data,
-    updatedAt: fs.serverTimestamp()
+    updatedAt: window.firebaseFS.serverTimestamp()
   }, { merge: true });
 }
 
 async function deleteSchedule(staffId) {
   try {
-    await fs.deleteDoc(fs.doc(db, 'staff_schedules', staffId));
+    await window.firebaseFS.deleteDoc(window.firebaseFS.doc(window.firebaseDb, 'staff_schedules', staffId));
   } catch (e) { /* ignore */ }
 }
 
 async function assignHeadOfStaff(staffId, staffName, adminName) {
   const week = getWeekRange();
-  const historyRef = fs.doc(fs.collection(db, 'head_of_staff_history'));
-  await fs.setDoc(fs.doc(db, 'head_of_staff', 'current'), {
+  const historyRef = window.firebaseFS.doc(window.firebaseFS.collection(window.firebaseDb, 'head_of_staff_history'));
+  await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'head_of_staff', 'current'), {
     staffId,
     staffName,
     weekStart: week.start,
     weekEnd: week.end,
     weekLabel: `${week.startLabel} - ${week.endLabel}`,
     assignedBy: adminName,
-    assignedAt: fs.serverTimestamp()
+    assignedAt: window.firebaseFS.serverTimestamp()
   });
-  await fs.setDoc(historyRef, {
+  await window.firebaseFS.setDoc(historyRef, {
     staffId,
     staffName,
     weekStart: week.start,
     weekEnd: week.end,
     weekLabel: `${week.startLabel} - ${week.endLabel}`,
     assignedBy: adminName,
-    assignedAt: fs.serverTimestamp()
+    assignedAt: window.firebaseFS.serverTimestamp()
   });
   currentHOS = { staffId, staffName, weekStart: week.start, weekEnd: week.end };
 }
@@ -170,6 +180,11 @@ function renderStaffTable(data) {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
   const list = data || staffList;
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--on-surface-var)">No staff members found.</td></tr>';
+    document.getElementById('staffCount').textContent = '0';
+    return;
+  }
   tbody.innerHTML = list.map(s => {
     const initials = (s.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2);
     const hasEmail = s.email ? `<span class="staff-email-sub">${esc(s.email)}</span>` : '';
@@ -213,18 +228,15 @@ function renderScheduleTable() {
       <td><code>${esc(s.id)}</code></td>
       <td><strong>${esc(s.name)}</strong><br><span class="badge-role role-${esc((s.role||'').toLowerCase())}">${esc(s.role)}</span></td>
       <td>${esc(s.dept)}</td>
-      <td><span class="shift-time">${esc(sch.shiftStart || '--')} - ${esc(sch.shiftEnd || '--')}</span></td>
-      <td><div class="days-wrap">${days || '<span class="text-muted">Not set</span>'}</div></td>
+      <td>${esc(sch.shiftStart || '--')} - ${esc(sch.shiftEnd || '--')}</td>
+      <td>${days}</td>
       <td>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-icon" onclick="openScheduleDrawer('${esc(s.id)}')" title="Edit Schedule"><span class="material-icons-round">edit</span></button>
-          <button class="btn-icon text-red" onclick="clearSchedule('${esc(s.id)}')" title="Clear Schedule"><span class="material-icons-round">delete</span></button>
-        </div>
+        <button class="btn-icon" onclick="openScheduleDrawer('${esc(s.id)}')" title="Edit"><span class="material-icons-round">edit</span></button>
+        <button class="btn-icon text-red" onclick="clearSchedule('${esc(s.id)}')" title="Clear"><span class="material-icons-round">delete</span></button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--on-surface-var);">No schedules assigned yet. Go to Staff Management tab to add schedules.</td></tr>';
-  tbody.innerHTML = rows;
-  document.getElementById('scheduleCount').textContent = staffList.filter(s => scheduleMap[s.id]).length;
+  }).join('');
+  tbody.innerHTML = rows.length > 0 ? rows : '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--on-surface-var)">No schedules configured yet.</td></tr>';
 }
 
 function renderHeadOfStaffSection() {
@@ -305,13 +317,13 @@ async function addStaff(e) {
     try {
       const cred = await window.createFirebaseUser(raw.email, password);
       await updateStaffInFirestore(staffId, { uid: cred.user.uid });
-      await fs.setDoc(fs.doc(db, 'users', cred.user.uid), {
+      await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'users', cred.user.uid), {
         name: raw.name,
         role: raw.role,
         title: raw.spec || raw.role,
         email: raw.email,
-        createdAt: fs.serverTimestamp(),
-        updatedAt: fs.serverTimestamp()
+        createdAt: window.firebaseFS.serverTimestamp(),
+        updatedAt: window.firebaseFS.serverTimestamp()
       });
     } catch (authErr) {
       console.warn('Auth creation failed (email may already exist):', authErr);
@@ -533,7 +545,7 @@ async function assignHeadOfStaffSubmit(e) {
   const staffId = document.getElementById('hosStaffSelect').value;
   const staff = staffList.find(s => s.id === staffId);
   if (!staff) { toast('Staff not found', 'error'); return; }
-  const adminName = currentUser ? currentUser.name : 'Admin';
+  const adminName = HMS.getUser()?.name || 'Admin';
   try {
     await assignHeadOfStaff(staffId, staff.name, adminName);
     await loadCurrentHeadOfStaff();
@@ -554,7 +566,7 @@ async function rotateHeadOfStaff() {
   }
   const nextIdx = Math.floor(Math.random() * nonScheduled.length);
   const next = nonScheduled[nextIdx];
-  const adminName = currentUser ? currentUser.name : 'Admin';
+  const adminName = HMS.getUser()?.name || 'Admin';
   try {
     await assignHeadOfStaff(next.id, next.name, adminName);
     await loadCurrentHeadOfStaff();
@@ -569,7 +581,7 @@ async function loadHOSHistory() {
   const container = document.getElementById('hosHistoryList');
   if (!container) return;
   try {
-    const snap = await fs.getDocs(fs.query(fs.collection(db, 'head_of_staff_history'), fs.orderBy('assignedAt', 'desc'), fs.limit(10)));
+    const snap = await window.firebaseFS.getDocs(window.firebaseFS.query(window.firebaseFS.collection(window.firebaseDb, 'head_of_staff_history'), window.firebaseFS.orderBy('assignedAt', 'desc'), window.firebaseFS.limit(10)));
     const items = [];
     snap.forEach(d => items.push({ id: d.id, ...d.data() }));
     if (items.length === 0) {
@@ -591,6 +603,63 @@ async function loadHOSHistory() {
   }
 }
 
+// ===== AUDIT LOGS =====
+
+async function loadAuditLogs() {
+  const container = document.getElementById('logsList');
+  if (!container) return;
+  try {
+    const snap = await window.firebaseFS.getDocs(
+      window.firebaseFS.query(
+        window.firebaseFS.collection(window.firebaseDb, 'audit_logs'),
+        window.firebaseFS.orderBy('timestamp', 'desc'),
+        window.firebaseFS.limit(50)
+      )
+    );
+    if (snap.empty) {
+      container.innerHTML = '<li class="log-item" style="justify-content:center;padding:24px;color:var(--on-surface-var)">No audit logs yet.</li>';
+      return;
+    }
+    container.innerHTML = snap.docs.map(d => {
+      const data = d.data();
+      const ts = data.timestamp?.toDate ? data.timestamp.toDate() : new Date();
+      const timeStr = ts.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const action = (data.action || 'EVENT').toUpperCase();
+      let badgeClass = 'info';
+      if (action.includes('LOGIN') || action.includes('LOGOUT')) badgeClass = 'info';
+      else if (action.includes('CREATE') || action.includes('UPDATE')) badgeClass = 'success';
+      else if (action.includes('DELETE') || action.includes('DENIED') || action.includes('FAILED')) badgeClass = 'warning';
+      const userName = data.userEmail ? data.userEmail.split('@')[0] : (data.userId || 'System');
+      const desc = buildLogDescription(action, data, userName);
+      return `<li class="log-item">
+        <span class="log-time">${esc(timeStr)}</span>
+        <span class="log-badge ${badgeClass}">${esc(action)}</span>
+        <p>${desc}</p>
+      </li>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<li class="log-item" style="justify-content:center;padding:24px;color:var(--on-surface-var)">Failed to load logs.</li>';
+  }
+}
+
+function buildLogDescription(action, data, userName) {
+  const resource = data.resourceType || '';
+  const details = data.details ? JSON.parse(data.details) : {};
+  switch (action) {
+    case 'LOGIN': return `<strong>${esc(userName)}</strong> logged into the system`;
+    case 'LOGOUT': return `<strong>${esc(userName)}</strong> logged out`;
+    case 'PATIENT_VIEW': return `<strong>${esc(userName)}</strong> viewed patient ${esc(details.patientName || data.resourceId || '')}`;
+    case 'PATIENT_CREATE': return `<strong>${esc(userName)}</strong> created patient ${esc(details.patientName || data.resourceId || '')}`;
+    case 'PATIENT_UPDATE': return `<strong>${esc(userName)}</strong> updated patient ${esc(details.patientName || data.resourceId || '')}`;
+    case 'PATIENT_DELETE': return `<strong>${esc(userName)}</strong> deleted patient ${esc(details.patientName || data.resourceId || '')}`;
+    case 'PRESCRIPTION_CREATE': return `<strong>${esc(userName)}</strong> created prescription for ${esc(details.patientName || '')}`;
+    case 'TRANSACTION_CREATE': return `<strong>${esc(userName)}</strong> recorded transaction ${esc(details.amount || '')}`;
+    case 'INVOICE_CREATE': return `<strong>${esc(userName)}</strong> created invoice ${esc(details.amount || '')}`;
+    case 'ACCESS_DENIED': return `Access denied for <strong>${esc(details.userId || userName)}</strong> (${esc(details.role || '')}) to ${esc(resource)}`;
+    default: return `<strong>${esc(userName)}</strong> ${esc(action)} on ${esc(resource)} ${esc(data.resourceId || '')}`;
+  }
+}
+
 // ===== HELPERS =====
 
 function populateStaffSelects() {
@@ -604,6 +673,18 @@ function populateStaffSelects() {
 // ===== EVENT LISTENERS =====
 
 document.addEventListener('DOMContentLoaded', async () => {
+  if (window._authReady) await window._authReady;
+  // _authReady can resolve before the Firebase Auth token is fully restored,
+  // causing Firestore security rules to reject queries. Wait for the actual
+  // Firebase Auth user object before proceeding.
+  if (!window._currentFirebaseUser) {
+    await new Promise(resolve => {
+      const check = setInterval(() => {
+        if (window._currentFirebaseUser) { clearInterval(check); resolve(); }
+      }, 50);
+      setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+    });
+  }
   await init();
   loadHOSHistory();
   const addForm = document.getElementById('addStaffForm');
@@ -625,4 +706,5 @@ async function init() {
   renderScheduleTable();
   renderHeadOfStaffSection();
   populateStaffSelects();
+  loadAuditLogs();
 }

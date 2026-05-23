@@ -258,7 +258,9 @@ async function fetchAndRenderInventory(direction = 0) {
     DRUG_INVENTORY = [];
     snapshot.forEach(doc => {
       const data = doc.data();
+      const batches = data.batches && data.batches.length > 0 ? data.batches : [{ batchNo: data.batch || 'LEGACY', stock: data.stock || 0, expiry: data.expiry || '-', mrp: data.mrp || 0 }];
       DRUG_INVENTORY.push({
+        _docId: doc.id,
         itemNo: data.itemNo || '-',
         name: data.brandName || 'Unknown',
         content: data.content || '-',
@@ -269,7 +271,9 @@ async function fetchAndRenderInventory(direction = 0) {
         unit: data.unit || 'units',
         expiry: data.expiry || '-',
         purchaseDate: data.purchaseDate || '-',
-        distributor: data.distributor || '-'
+        distributor: data.distributor || '-',
+        batches: batches,
+        rack: data.rack || ''
       });
     });
 
@@ -451,12 +455,40 @@ async function submitInvoice() {
   const patient = document.getElementById('invoicePatient')?.value || 'Patient';
   const totalText = document.getElementById('invoiceTotal')?.textContent || '₹0';
   const amount = parseFloat(totalText.replace(/[₹,]/g, '')) || 0;
+  const fs = window.firebaseDb && window.firebaseFS;
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
     if (fs && amount > 0) {
       await fs.addDoc(fs.collection(window.firebaseDb, 'transactions'), {
         patientName: patient, amount, status: 'paid', items: document.querySelectorAll('.invoice-line').length,
         createdAt: fs.serverTimestamp?.() || new Date().toISOString()
+      });
+      // Decrement inventory stock for each invoice line
+      document.querySelectorAll('.invoice-line').forEach(async (line) => {
+        const sel = line.querySelector('.inv-drug-select');
+        const qtyInput = line.querySelector('.inv-qty');
+        if (!sel || !qtyInput) return;
+        const drugName = sel.options[sel.selectedIndex]?.text;
+        const qty = parseInt(qtyInput.value) || 0;
+        if (!drugName || qty <= 0) return;
+        // Find the inventory item by name in DRUG_INVENTORY
+        const item = DRUG_INVENTORY.find(d => d.name.toLowerCase() === drugName.toLowerCase());
+        if (item && item._docId) {
+          const newStock = Math.max(0, (item.stock || 0) - qty);
+          // Decrement from first available batch
+          const updatedBatches = item.batches ? item.batches.map(b => ({ ...b })) : [];
+          if (updatedBatches.length > 0) {
+            let remaining = qty;
+            for (const b of updatedBatches) {
+              if (remaining <= 0) break;
+              const take = Math.min(b.stock, remaining);
+              b.stock -= take;
+              remaining -= take;
+            }
+          }
+          await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', item._docId), { stock: newStock, batches: updatedBatches.filter(b => b.stock > 0) });
+          item.stock = newStock;
+          if (item.batches) item.batches = updatedBatches.filter(b => b.stock > 0);
+        }
       });
     }
   } catch (e) { addConsoleLog('WARN', 'Failed to save transaction: ' + e.message); }

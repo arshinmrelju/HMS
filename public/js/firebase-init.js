@@ -25,6 +25,8 @@ import {
   query,
   where,
   orderBy,
+  startAfter,
+  startAt,
   limit as firestoreLimit,
   serverTimestamp,
   Timestamp
@@ -60,7 +62,7 @@ window.createFirebaseUser = (email, password) => createUserWithEmailAndPassword(
 window.sendFirebasePasswordReset = (email) => sendPasswordResetEmail(auth, email);
 window.firebaseFS = {
   collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit: firestoreLimit, serverTimestamp, Timestamp
+  query, where, orderBy, startAfter, startAt, limit: firestoreLimit, serverTimestamp, Timestamp
 };
 
 /* --- Auth state restoration across page loads --- */
@@ -83,6 +85,43 @@ onAuthStateChanged(auth, async (firebaseUser) => {
             title: profile.title || '',
             role: profile.role || 'Staff',
             redirect: HMS_AUTH.getRedirect(profile.role || 'Staff')
+          });
+        } else {
+          // No Firestore profile document exists — auto-create one
+          // using the existing session data (from login redirect).
+          const fallback = HMS_AUTH.getSession();
+          const defaultDoc = {
+            name: fallback?.name || firebaseUser.email.split('@')[0],
+            role: fallback?.role || 'Staff',
+            email: firebaseUser.email,
+            title: fallback?.title || fallback?.role || 'Staff',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          };
+          await setDoc(doc(db, 'users', firebaseUser.uid), defaultDoc);
+          HMS_AUTH.setSession({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: defaultDoc.name,
+            title: defaultDoc.title,
+            role: defaultDoc.role,
+            redirect: HMS_AUTH.getRedirect(defaultDoc.role)
+          });
+        }
+      } catch (e) { /* ignore */ }
+    } else {
+      // Session exists but the Firestore profile doc may be missing.
+      // Silently ensure it exists so security rules' getUserRole() works.
+      try {
+        const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (!snap.exists()) {
+          await setDoc(doc(db, 'users', firebaseUser.uid), {
+            name: existing.name || firebaseUser.email.split('@')[0],
+            role: existing.role || 'Staff',
+            email: firebaseUser.email,
+            title: existing.title || existing.role || 'Staff',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
           });
         }
       } catch (e) { /* ignore */ }

@@ -2,18 +2,13 @@
 HMS.requireAuth();
 
 let MEDICINES = [];
-try {
-  const raw = localStorage.getItem('hms_inventory');
-  if (raw) {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length) {
-      MEDICINES = parsed;
-    }
-  }
-} catch(e) { /* ignore parse errors */ }
+let MEDICINES_MAP = {}; // name -> Firestore doc ID lookup
 
 const REQUISITIONS = [];
 const NOTIFICATIONS = [];
+
+let _invLoaded = false, _patCursor = null, _patComplete = false;
+const PAT_PAGE_SIZE = 100;
 
 function saveInventory() {
   try { localStorage.setItem('hms_inventory', JSON.stringify(MEDICINES)); } catch(e) { /* quota errors */ }
@@ -58,25 +53,33 @@ let billFilter = 'all';
 function renderMedTable(data = MEDICINES) {
   const tbody = document.getElementById('medTableBody');
   if (!tbody) return;
-  const filtered = data.filter(m => medFilter === 'all' || m.cat === medFilter);
+  const statusFilter = document.getElementById('medStatusFilter')?.value || 'all';
+  const filtered = data.filter(m => {
+    if (medFilter !== 'all' && m.cat !== medFilter) return false;
+    if (statusFilter !== 'all' && m.status !== statusFilter) return false;
+    return true;
+  });
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--on-surface-var)">No medicines in inventory. Add one to get started.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--on-surface-var)">No medicines match your filters.</td></tr>';
     return;
   }
-  tbody.innerHTML = filtered.map(m => `
+  tbody.innerHTML = filtered.map(m => {
+    const batchesHtml = (m.batches || []).map(b =>
+      `<span style="display:inline-block;background:var(--surface-mid);padding:1px 8px;border-radius:4px;font-size:.72rem;margin:1px 2px" title="Batch ${esc(b.batchNo)}: ${b.stock} units, Exp ${b.expiry}">${esc(b.batchNo)} <span style="font-weight:700">${b.stock}</span></span>`
+    ).join(' ');
+    return `
     <tr>
       <td style="font-weight:600">${esc(m.name)}</td>
       <td><span class="badge-status stable" style="text-transform:capitalize;background:rgba(59,130,246,.1);color:#2563EB">${esc(m.cat)}</span></td>
+      <td style="font-size:.78rem;max-width:180px">${batchesHtml || '<span style="color:var(--outline)">—</span>'}</td>
       <td><span style="font-weight:700;color:${m.stock===0?'var(--accent-red)':m.stock<=m.reorderPoint?'var(--accent-amber)':'var(--accent-green)'}">${m.stock}</span> units</td>
-      <td>₹${Number(m.price).toFixed(2)}</td>
-      <td style="font-size:.82rem">${esc(m.expiry)}</td>
+      <td style="font-size:.82rem">${esc(m.rack) || '<span style="color:var(--outline)">—</span>'}</td>
       <td><span class="badge-status ${m.status==='in-stock'?'stable':m.status==='low'?'pending':'critical'}">${m.status==='in-stock'?'In Stock':m.status==='low'?'Low Stock':'Out of Stock'}</span></td>
       <td>
         <button class="icon-btn" onclick="triggerRopCheck('${esc(m.name)}')" title="Trigger Automated ROP Check"><span class="material-icons-round">sensors</span></button>
-        <button class="icon-btn" onclick="toast('Editing ${esc(m.name)}...','info','edit')"><span class="material-icons-round">edit</span></button>
+        <button class="icon-btn" onclick="openMedEdit('${esc(m.name)}')" title="Edit Medicine"><span class="material-icons-round">edit</span></button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;}).join('');
 }
 
 function filterMedCategory(btn, cat) {
@@ -89,18 +92,114 @@ function filterMedCategory(btn, cat) {
 
 function filterMedTable() {
   const q = document.getElementById('medSearch')?.value.toLowerCase() || '';
-  renderMedTable(MEDICINES.filter(m => m.name.toLowerCase().includes(q)));
+  renderMedTable(MEDICINES.filter(m => {
+    if (!q) return true;
+    const batchMatch = (m.batches || []).some(b => (b.batchNo || '').toLowerCase().includes(q));
+    return m.name.toLowerCase().includes(q) ||
+           (m.cat || '').toLowerCase().includes(q) ||
+           (m.rack || '').toLowerCase().includes(q) ||
+           batchMatch;
+  }));
+}
+
+let _medSearchTimer = null;
+let _allInventory = null;
+let _allInventoryLoading = false;
+
+async function ensureAllInventory() {
+  if (_allInventory !== null) return _allInventory;
+  if (_allInventoryLoading) {
+    await new Promise(r => { const c = setInterval(() => { if (_allInventory !== null) { clearInterval(c); r(); } }, 100); });
+    return _allInventory;
+  }
+  _allInventoryLoading = true;
+  const fs = window.firebaseDb && window.firebaseFS;
+  if (!fs) { _allInventory = []; _allInventoryLoading = false; return []; }
+  const items = [];
+  let cursor = null;
+  try {
+    while (true) {
+      let q;
+      const base = fs.collection(window.firebaseDb, 'inventory');
+      if (cursor) {
+        q = fs.query(base, fs.orderBy('__name__'), fs.startAfter(cursor), fs.limit(1000));
+      } else {
+        q = fs.query(base, fs.orderBy('__name__'), fs.limit(1000));
+      }
+      const snap = await fs.getDocs(q);
+      if (snap.empty) break;
+      snap.forEach(d => {
+        const data = d.data();
+        const batches = data.batches && data.batches.length > 0 ? data.batches : [{ batchNo: data.batchNo || 'LEGACY', stock: data.stock || 0, expiry: data.expiry || 'N/A', mrp: data.price || data.mrp || 0 }];
+        const totalStock = batches.reduce((s, b) => s + (b.stock || 0), 0);
+        const earliestBatch = batches.reduce((earliest, b) => (!earliest || (b.expiry && b.expiry < earliest.expiry) ? b : earliest), null);
+        items.push({
+          id: d.id,
+          name: data.name || data.brandName || '',
+          cat: data.cat || data.category || '',
+          stock: totalStock,
+          price: data.price || data.mrp || 0,
+          expiry: earliestBatch ? earliestBatch.expiry : (data.expiry || 'N/A'),
+          rack: data.rack || '',
+          batches: batches,
+          safetyStock: data.safetyStock || 30,
+          leadTime: data.leadTime || 3,
+          adu: data.adu || 10,
+          reorderPoint: data.reorderPoint || 0,
+          reorderQty: data.reorderQty || 100,
+          status: data.status || (totalStock === 0 ? 'out' : totalStock <= data.reorderPoint ? 'low' : 'in-stock')
+        });
+      });
+      cursor = snap.docs[snap.docs.length - 1];
+      if (snap.docs.length < 1000) break;
+    }
+  } catch (e) { /* if full load fails, return what we have */ }
+  _allInventory = items;
+  _allInventoryLoading = false;
+  return items;
+}
+
+function filterMedTableRemote() {
+  clearTimeout(_medSearchTimer);
+  _medSearchTimer = setTimeout(async () => {
+    const q = document.getElementById('medSearch')?.value.trim().toLowerCase() || '';
+    if (!q) { renderMedTable(); return; }
+    const all = await ensureAllInventory();
+    const matched = all.filter(m => {
+      if (!q) return true;
+      const batchMatch = (m.batches || []).some(b => (b.batchNo || '').toLowerCase().includes(q));
+      return m.name.toLowerCase().includes(q) ||
+             (m.cat || '').toLowerCase().includes(q) ||
+             (m.rack || '').toLowerCase().includes(q) ||
+             batchMatch;
+    });
+    if (matched.length > 0) {
+      renderMedTable(matched);
+    } else {
+      renderMedTable(MEDICINES.filter(m => {
+        if (!q) return true;
+        const batchMatch = (m.batches || []).some(b => (b.batchNo || '').toLowerCase().includes(q));
+        return m.name.toLowerCase().includes(q) ||
+               (m.cat || '').toLowerCase().includes(q) ||
+               (m.rack || '').toLowerCase().includes(q) ||
+               batchMatch;
+      }));
+    }
+  }, 300);
 }
 
 function showLowStock() {
-  medFilter = 'low';
+  medFilter = 'all';
   const chips = document.querySelectorAll('#tab-inventory .chip');
   chips.forEach(c => c.classList.remove('active'));
   if (chips.length > 0) chips[0].classList.add('active');
+  const statusSel = document.getElementById('medStatusFilter');
+  if (statusSel) statusSel.value = 'all';
   const invBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.textContent.trim().toLowerCase().includes('inventory'));
   if (invBtn) invBtn.click();
-  renderMedTable(MEDICINES.filter(m => m.status === 'low' || m.status === 'out'));
-  toast('Showing low-stock and out-of-stock items', 'info', 'inventory_2');
+  const lowItems = MEDICINES.filter(m => m.status === 'low' || m.status === 'out');
+  renderMedTable(lowItems);
+  toast(`Showing ${lowItems.length} low-stock or out-of-stock items`, 'info', 'inventory_2');
 }
 
 function renderPrescriptions() {
@@ -158,7 +257,7 @@ function filterBill(btn, f) {
 async function markPaid(inv) {
   const i = INVOICES.find(x => x.inv === inv);
   if (i) { i.status = 'paid'; renderBillTable();
-    try { const fs = window.firebaseDb && window.firebaseFS; if (fs) { const snap = await fs.getDocs(fs.query(fs.collection(window.firebaseDb, 'transactions'), fs.where('patientName', '==', i.patient), fs.limit(1))); snap.forEach(d => fs.updateDoc(d.ref, { status: 'paid' })); } } catch (e) { /* ignore */ }
+    try { const fs = window.firebaseDb && window.firebaseFS; if (fs && i._docId) await fs.updateDoc(fs.doc(window.firebaseDb, 'transactions', i._docId), { status: 'paid' }); } catch (e) { /* ignore */ }
     toast(`${inv} marked as paid!`, 'success'); }
 }
 
@@ -196,25 +295,33 @@ function viewBill(inv) {
 
 async function submitAddMed(e) {
   e.preventDefault();
-  const stock = parseInt(document.getElementById('medStock').value) || 0;
+  const batchNo = document.getElementById('medBatchNo').value;
+  const batchStock = parseInt(document.getElementById('medStock').value) || 0;
+  const batchExpiry = document.getElementById('medExpiry').value || 'N/A';
+  const batchMrp = parseFloat(document.getElementById('medPrice').value) || 0;
   const safetyStock = 30;
   const leadTime = 3;
   const adu = 10;
   const reorderPoint = (adu * leadTime) + safetyStock;
   const reorderQty = 100;
 
+  const name = document.getElementById('medName').value;
+  const batches = [{ batchNo, stock: batchStock, expiry: batchExpiry, mrp: batchMrp }];
   const m = {
-    name: document.getElementById('medName').value,
+    name: name,
+    searchName: name.toLowerCase(),
     cat: document.getElementById('medCat').value.toLowerCase(),
-    stock: stock,
-    price: parseFloat(document.getElementById('medPrice').value)||0,
-    expiry: document.getElementById('medExpiry').value || 'N/A',
+    rack: document.getElementById('medRack').value.trim(),
+    stock: batchStock,
+    price: batchMrp,
+    expiry: batchExpiry,
+    batches: batches,
     safetyStock: safetyStock,
     leadTime: leadTime,
     adu: adu,
     reorderPoint: reorderPoint,
     reorderQty: reorderQty,
-    status: stock === 0 ? 'out' : stock <= reorderPoint ? 'low' : 'in-stock'
+    status: batchStock === 0 ? 'out' : batchStock <= reorderPoint ? 'low' : 'in-stock'
   };
 
   // Persist to Firestore
@@ -230,6 +337,99 @@ async function submitAddMed(e) {
   populateBillingMedicineDatalist();
   closeModal(null,'addMedModal');
   toast(`${m.name} added to inventory!`, 'success');
+}
+
+/* --- Edit Medicine --- */
+function openMedEdit(name) {
+  const m = MEDICINES.find(x => x.name === name);
+  if (!m) return;
+  document.getElementById('editMedName').value = m.name;
+  document.getElementById('editMedCat').value = m.cat.charAt(0).toUpperCase() + m.cat.slice(1);
+  document.getElementById('editMedRack').value = m.rack || '';
+  document.getElementById('editSafetyStock').value = m.safetyStock || 30;
+  document.getElementById('editLeadTime').value = m.leadTime || 3;
+  document.getElementById('editAdu').value = m.adu || 10;
+  document.getElementById('editReorderQty').value = m.reorderQty || 100;
+  renderEditBatches(m);
+  openModal('editMedModal');
+}
+
+function renderEditBatches(m) {
+  const container = document.getElementById('editBatchesList');
+  if (!container) return;
+  const count = document.getElementById('editBatchCount');
+  if (count) count.textContent = `(${(m.batches || []).length} total)`;
+  container.innerHTML = (m.batches || []).map((b, i) => `
+    <div class="bill-item-row edit-batch-row" style="margin-bottom:6px;gap:6px">
+      <input type="text" class="edit-batch-no" value="${esc(b.batchNo)}" placeholder="Batch No" style="width:100px;font-size:.78rem" />
+      <input type="number" class="edit-batch-stock" value="${b.stock}" placeholder="Stock" min="0" style="width:65px;font-size:.78rem" />
+      <input type="date" class="edit-batch-expiry" value="${b.expiry !== 'N/A' ? b.expiry : ''}" style="width:115px;font-size:.78rem" />
+      <input type="number" class="edit-batch-mrp" value="${b.mrp || 0}" placeholder="MRP" min="0" step="0.01" style="width:80px;font-size:.78rem" />
+      <button type="button" class="icon-btn danger" onclick="removeEditBatchRow(this)" title="Remove batch"><span class="material-icons-round" style="font-size:18px">delete</span></button>
+    </div>
+  `).join('');
+}
+
+function addEditBatchRow() {
+  const container = document.getElementById('editBatchesList');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'bill-item-row edit-batch-row';
+  row.style.cssText = 'margin-bottom:6px;gap:6px';
+  row.innerHTML = '<input type="text" class="edit-batch-no" placeholder="Batch No" style="width:100px;font-size:.78rem" /><input type="number" class="edit-batch-stock" placeholder="Stock" min="0" style="width:65px;font-size:.78rem" /><input type="date" class="edit-batch-expiry" style="width:115px;font-size:.78rem" /><input type="number" class="edit-batch-mrp" placeholder="MRP" min="0" step="0.01" style="width:80px;font-size:.78rem" /><button type="button" class="icon-btn danger" onclick="removeEditBatchRow(this)" title="Remove batch"><span class="material-icons-round" style="font-size:18px">delete</span></button>';
+  container.appendChild(row);
+  const count = document.getElementById('editBatchCount');
+  const total = container.querySelectorAll('.edit-batch-row').length;
+  if (count) count.textContent = `(${total} total)`;
+}
+
+function removeEditBatchRow(btn) {
+  const row = btn.closest('.edit-batch-row');
+  if (!row) return;
+  const container = document.getElementById('editBatchesList');
+  if (container && container.querySelectorAll('.edit-batch-row').length <= 1) { toast('At least one batch is required.', 'error'); return; }
+  row.remove();
+  const count = document.getElementById('editBatchCount');
+  if (count && container) count.textContent = `(${container.querySelectorAll('.edit-batch-row').length} total)`;
+}
+
+async function submitEditMed(e) {
+  e.preventDefault();
+  const name = document.getElementById('editMedName').value;
+  const m = MEDICINES.find(x => x.name === name);
+  if (!m) return;
+  m.cat = document.getElementById('editMedCat').value.toLowerCase();
+  m.rack = document.getElementById('editMedRack').value.trim();
+  m.safetyStock = parseInt(document.getElementById('editSafetyStock').value) || 30;
+  m.leadTime = parseInt(document.getElementById('editLeadTime').value) || 3;
+  m.adu = parseInt(document.getElementById('editAdu').value) || 10;
+  m.reorderQty = parseInt(document.getElementById('editReorderQty').value) || 100;
+  m.reorderPoint = (m.adu * m.leadTime) + m.safetyStock;
+  // Read batches from form
+  const batchRows = document.querySelectorAll('#editBatchesList .edit-batch-row');
+  m.batches = Array.from(batchRows).map(r => ({
+    batchNo: r.querySelector('.edit-batch-no').value.trim(),
+    stock: parseInt(r.querySelector('.edit-batch-stock').value) || 0,
+    expiry: r.querySelector('.edit-batch-expiry').value || 'N/A',
+    mrp: parseFloat(r.querySelector('.edit-batch-mrp').value) || 0
+  })).filter(b => b.batchNo);
+  m.stock = m.batches.reduce((s, b) => s + b.stock, 0);
+  m.price = m.batches.length > 0 ? m.batches[0].mrp : 0;
+  m.expiry = m.batches.reduce((earliest, b) => (!earliest || (b.expiry && b.expiry < earliest.expiry) ? b : earliest), null)?.expiry || 'N/A';
+  m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
+  // Persist to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs && m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), {
+      cat: m.cat, rack: m.rack, stock: m.stock, price: m.price, expiry: m.expiry,
+      batches: m.batches, safetyStock: m.safetyStock, leadTime: m.leadTime, adu: m.adu,
+      reorderQty: m.reorderQty, reorderPoint: m.reorderPoint, status: m.status
+    });
+  } catch (e) { addConsoleLog('WARN', 'Failed to save medicine edit: ' + e.message); }
+  renderMedTable();
+  if (typeof renderRopConfigTable === 'function') { renderRopConfigTable(); populateSimMedSelect(); }
+  closeModal(null, 'editMedModal');
+  toast(`${m.name} updated!`, 'success');
 }
 
 function renderBillItemMatch(row, match) {
@@ -292,7 +492,8 @@ async function submitBill(e) {
       status: 'unpaid', createdAt: fs.serverTimestamp?.() || new Date().toISOString()
     });
   } catch (e) { addConsoleLog('WARN', 'Failed to save invoice: ' + e.message); }
-  const newInv = { inv: docRef ? docRef.id.slice(0, 8).toUpperCase() : `INV-${String(INVOICES.length+1).padStart(3,'0')}`, patient, date: new Date().toISOString().slice(0,10), items: document.querySelectorAll('.bill-item-row').length+1, amount, status:'unpaid' };
+  const docId = docRef?.id;
+  const newInv = { _docId: docId, inv: docId ? docId.slice(0, 8).toUpperCase() : `INV-${String(INVOICES.length+1).padStart(3,'0')}`, patient, date: new Date().toISOString().slice(0,10), items: document.querySelectorAll('.bill-item-row').length+1, amount, status:'unpaid' };
   INVOICES.unshift(newInv);
   closeModal(null,'generateBillModal');
   switchTab(document.querySelector('.tab-btn:last-child'), 'billing');
@@ -339,6 +540,147 @@ function initPatientAutocomplete() {
   window.selectBillPatient = function(val) { input.value = val; dropdown.classList.remove('active'); };
 }
 
+/* --- Firestore loaders --- */
+const INV_PAGE_SIZE = 100;
+let _invCursor = null;
+let _invComplete = false;
+
+function updateLoadMoreBtn() {
+  const cont = document.getElementById('loadMoreInvContainer');
+  if (!cont) return;
+  cont.hidden = _invComplete || MEDICINES.length === 0;
+}
+
+async function loadInventoryFromFirestore(reset = true) {
+  if (_invComplete) return;
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    if (reset) { MEDICINES = []; MEDICINES_MAP = {}; _invCursor = null; _invComplete = false; }
+    let q = fs.query(fs.collection(window.firebaseDb, 'inventory'), fs.orderBy('__name__'), fs.limit(INV_PAGE_SIZE));
+    if (_invCursor) q = fs.query(fs.collection(window.firebaseDb, 'inventory'), fs.orderBy('__name__'), fs.startAfter(_invCursor), fs.limit(INV_PAGE_SIZE));
+    const snap = await fs.getDocs(q);
+    if (snap.empty) {
+      if (reset && MEDICINES.length === 0) {
+        const raw = localStorage.getItem('hms_inventory');
+        if (raw) { try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) MEDICINES = parsed; } catch(_) {} }
+      }
+      _invComplete = true;
+      updateLoadMoreBtn();
+      return;
+    }
+    snap.forEach(d => {
+      const data = d.data();
+      const batches = data.batches && data.batches.length > 0 ? data.batches : [{ batchNo: data.batchNo || 'LEGACY', stock: data.stock || 0, expiry: data.expiry || 'N/A', mrp: data.price || data.mrp || 0 }];
+      const totalStock = batches.reduce((s, b) => s + (b.stock || 0), 0);
+      const earliestBatch = batches.reduce((earliest, b) => (!earliest || (b.expiry && b.expiry < earliest.expiry) ? b : earliest), null);
+      const item = {
+        id: d.id,
+        name: data.name || data.brandName || '',
+        cat: data.cat || data.category || '',
+        stock: totalStock,
+        price: data.price || data.mrp || 0,
+        expiry: earliestBatch ? earliestBatch.expiry : (data.expiry || 'N/A'),
+        rack: data.rack || '',
+        batches: batches,
+        safetyStock: data.safetyStock || 30,
+        leadTime: data.leadTime || 3,
+        adu: data.adu || 10,
+        reorderPoint: data.reorderPoint || 0,
+        reorderQty: data.reorderQty || 100,
+        status: data.status || (totalStock === 0 ? 'out' : totalStock <= data.reorderPoint ? 'low' : 'in-stock')
+      };
+      MEDICINES.push(item);
+      MEDICINES_MAP[item.name.toLowerCase()] = d.id;
+    });
+    _invCursor = snap.docs[snap.docs.length - 1];
+    if (snap.docs.length < INV_PAGE_SIZE) _invComplete = true;
+    try { localStorage.setItem('hms_inventory', JSON.stringify(MEDICINES)); } catch(_) {}
+    _invLoaded = true;
+    updateLoadMoreBtn();
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load inventory: ' + e.message);
+    _invComplete = true;
+    updateLoadMoreBtn();
+    if (reset) {
+      const raw = localStorage.getItem('hms_inventory');
+      if (raw) { try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) MEDICINES = parsed; } catch(_) {} }
+    }
+  }
+}
+
+async function loadMoreInventory() {
+  if (_invComplete || !_invCursor) { updateLoadMoreBtn(); return; }
+  await loadInventoryFromFirestore(false);
+  renderMedTable();
+  if (typeof renderRopConfigTable === 'function') { renderRopConfigTable(); populateSimMedSelect(); }
+  updateLoadMoreBtn();
+}
+
+async function loadPatientsForPharmacy(reset = true) {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    if (window.allPatients && window.allPatients.length > 0) {
+      PATIENTS_DB.length = 0;
+      PATIENTS_DB.push(...window.allPatients);
+      return;
+    }
+    if (reset) { PATIENTS_DB.length = 0; _patCursor = null; _patComplete = false; }
+    if (_patComplete) return;
+    let q = fs.query(fs.collection(window.firebaseDb, 'patients'), fs.orderBy('name'), fs.limit(PAT_PAGE_SIZE));
+    if (_patCursor) q = fs.query(fs.collection(window.firebaseDb, 'patients'), fs.orderBy('name'), fs.startAfter(_patCursor), fs.limit(PAT_PAGE_SIZE));
+    const snap = await fs.getDocs(q);
+    if (!snap.empty) {
+      snap.forEach(d => {
+        const data = d.data();
+        PATIENTS_DB.push({
+          name: data.name || data.patientName || 'Unknown',
+          phone: data.phone || data.contact || data.mobile || ''
+        });
+      });
+      _patCursor = snap.docs[snap.docs.length - 1];
+    }
+    if (snap.empty || snap.docs.length < PAT_PAGE_SIZE) _patComplete = true;
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load patients: ' + e.message);
+  }
+}
+
+async function loadMorePatients() {
+  if (_patComplete) return;
+  await loadPatientsForPharmacy(false);
+  if (typeof initPatientAutocomplete === 'function') initPatientAutocomplete();
+}
+
+async function loadRequisitionsFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const snap = await fs.getDocs(fs.query(fs.collection(window.firebaseDb, 'purchase_requisitions'), fs.orderBy('createdAt', 'desc'), fs.limit(50)));
+    snap.forEach(d => {
+      const data = d.data();
+      REQUISITIONS.push({ id: d.id, name: data.name, qty: data.qty, date: data.date, status: data.status });
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load requisitions: ' + e.message);
+  }
+}
+
+async function loadNotificationsFromFirestore() {
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (!fs) return;
+    const snap = await fs.getDocs(fs.query(fs.collection(window.firebaseDb, 'notifications'), fs.orderBy('createdAt', 'desc'), fs.limit(50)));
+    snap.forEach(d => {
+      const data = d.data();
+      NOTIFICATIONS.push({ time: data.time, message: data.message, type: data.type });
+    });
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load notifications: ' + e.message);
+  }
+}
+
 async function loadPrescriptionsFromFirestore() {
   try {
     const fs = window.firebaseDb && window.firebaseFS;
@@ -371,6 +713,7 @@ async function loadInvoicesFromFirestore() {
     snap.forEach(d => {
       const data = d.data();
       INVOICES.push({
+        _docId: d.id,
         inv: d.id.slice(0, 8).toUpperCase(),
         patient: data.patientName || data.patient || 'Unknown',
         date: data.createdAt?.toDate?.()?.toLocaleDateString?.() || new Date().toISOString().slice(0, 10),
@@ -385,7 +728,23 @@ async function loadInvoicesFromFirestore() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await Promise.all([loadPrescriptionsFromFirestore(), loadInvoicesFromFirestore()]);
+  if (window._authReady) await window._authReady;
+  if (!window._currentFirebaseUser) {
+    await new Promise(resolve => {
+      const check = setInterval(() => {
+        if (window._currentFirebaseUser) { clearInterval(check); resolve(); }
+      }, 50);
+      setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+    });
+  }
+  await Promise.all([
+    loadInventoryFromFirestore(),
+    loadPrescriptionsFromFirestore(),
+    loadInvoicesFromFirestore(),
+    loadPatientsForPharmacy(),
+    loadRequisitionsFromFirestore(),
+    loadNotificationsFromFirestore()
+  ]);
   MEDICINES.forEach(m => {
     if (m.leadTime === undefined) m.leadTime = 3;
     if (m.adu === undefined) m.adu = Math.round((m.reorderPoint - m.safetyStock) / m.leadTime) || 10;
@@ -410,6 +769,7 @@ function renderRopConfigTable() {
   tbody.innerHTML = MEDICINES.map(m => `
     <tr>
       <td style="font-weight:600">${esc(m.name)}</td>
+      <td style="font-size:.82rem">${esc(m.rack) || '<span style="color:var(--outline)">—</span>'}</td>
       <td><span style="font-weight:700;color:${m.stock===0?'var(--accent-red)':m.stock<=m.reorderPoint?'var(--accent-amber)':'var(--accent-green)'}">${m.stock}</span> units</td>
       <td>${m.safetyStock} units</td>
       <td style="font-weight:600;color:var(--primary-light)">${m.reorderPoint} units</td>
@@ -491,7 +851,7 @@ function calculateRopValue() {
   if (valEl) valEl.textContent = calculated;
 }
 
-function submitRopConfig(e) {
+async function submitRopConfig(e) {
   e.preventDefault();
   const name = document.getElementById('ropConfigMedNameHidden')?.value;
   const m = MEDICINES.find(x => x.name === name);
@@ -502,6 +862,14 @@ function submitRopConfig(e) {
   m.reorderQty = parseInt(document.getElementById('ropConfigReorderQty')?.value) || 100;
   m.reorderPoint = (m.adu * m.leadTime) + m.safetyStock;
   m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
+  // Persist to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs && m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), {
+      safetyStock: m.safetyStock, leadTime: m.leadTime, adu: m.adu,
+      reorderQty: m.reorderQty, reorderPoint: m.reorderPoint, status: m.status
+    });
+  } catch (e) { addConsoleLog('WARN', 'Failed to save ROP config: ' + e.message); }
   renderMedTable();
   renderRopConfigTable();
   populateSimMedSelect();
@@ -510,23 +878,29 @@ function submitRopConfig(e) {
   checkAndTriggerRop(m);
 }
 
-function checkAndTriggerRop(m) {
+async function checkAndTriggerRop(m) {
   if (m.stock <= m.reorderPoint) {
     const activePr = REQUISITIONS.find(r => r.name === m.name && (r.status === 'pending' || r.status === 'ordered'));
     if (!activePr) {
-      const prId = `PR-2026-${String(REQUISITIONS.length + 1).padStart(3, '0')}`;
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      REQUISITIONS.unshift({ id: prId, name: m.name, qty: m.reorderQty, date: now.toISOString().slice(0, 10), status: 'pending' });
-      NOTIFICATIONS.unshift({ time: timeStr, message: `Automated PR generated: ${prId} created for ${m.name} (Stock: ${m.stock} units, ROP: ${m.reorderPoint} units).`, type: m.stock <= m.safetyStock ? 'error' : 'warning' });
+      const fs = window.firebaseDb && window.firebaseFS;
+      const prData = { name: m.name, qty: m.reorderQty, date: now.toISOString().slice(0, 10), status: 'pending', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
+      const notifData = { time: timeStr, message: `Automated PR generated for ${m.name} (Stock: ${m.stock} units, ROP: ${m.reorderPoint} units).`, type: m.stock <= m.safetyStock ? 'error' : 'warning', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
+      let prRef, notifRef;
+      try {
+        if (fs) { prRef = await fs.addDoc(fs.collection(window.firebaseDb, 'purchase_requisitions'), prData); notifRef = await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); }
+      } catch (e) { addConsoleLog('WARN', 'Failed to persist ROP trigger: ' + e.message); }
+      REQUISITIONS.unshift({ id: prRef?.id || `PR-${Date.now()}`, ...prData });
+      NOTIFICATIONS.unshift(notifData);
       renderPrTable();
       renderRopNotifList();
-      toast(`Auto-PR ${prId} generated for ${m.name}!`, 'warning', 'sensors');
+      toast(`Auto-PR generated for ${m.name}!`, 'warning', 'sensors');
     }
   }
 }
 
-function runDispenseSimulation(e) {
+async function runDispenseSimulation(e) {
   e.preventDefault();
   const medName = document.getElementById('simMedSelect')?.value;
   const qty = parseInt(document.getElementById('simDispenseQty')?.value) || 0;
@@ -534,10 +908,30 @@ function runDispenseSimulation(e) {
   if (!m) return;
   if (m.stock < qty) { toast(`Cannot dispense ${qty} units. Only ${m.stock} available.`, 'error'); return; }
   m.stock -= qty;
+  // Decrement from first batch with enough stock
+  if (m.batches && m.batches.length > 0) {
+    let remaining = qty;
+    for (const b of m.batches) {
+      if (remaining <= 0) break;
+      const take = Math.min(b.stock, remaining);
+      b.stock -= take;
+      remaining -= take;
+    }
+    m.batches = m.batches.filter(b => b.stock > 0);
+    if (m.batches.length === 0) { m.batches = [{ batchNo: 'ADJUSTED', stock: 0, expiry: m.expiry || 'N/A', mrp: m.price || 0 }]; }
+  }
   m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
+  // Persist stock change to Firestore
+  try {
+    const fs = window.firebaseDb && window.firebaseFS;
+    if (fs && m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), { stock: m.stock, status: m.status, batches: m.batches });
+  } catch (e) { addConsoleLog('WARN', 'Failed to sync stock: ' + e.message); }
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  NOTIFICATIONS.unshift({ time: timeStr, message: `Simulation: Dispensed ${qty} units of ${m.name}. Stock reduced to ${m.stock} units.`, type: 'info' });
+  const fs = window.firebaseDb && window.firebaseFS;
+  const notifData = { time: timeStr, message: `Simulation: Dispensed ${qty} units of ${m.name}. Stock reduced to ${m.stock} units.`, type: 'info', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
+  try { if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); } catch (_) {}
+  NOTIFICATIONS.unshift(notifData);
   toast(`Dispensed ${qty} units of ${m.name}`, 'info');
   renderMedTable();
   renderRopConfigTable();
@@ -555,29 +949,49 @@ function triggerRopCheck(name) {
   else { toast(`${m.name} stock (${m.stock}) is above ROP (${m.reorderPoint}). No PR needed.`, 'success'); }
 }
 
-function approveRopPR(prId) {
+async function approveRopPR(prId) {
   const r = REQUISITIONS.find(x => x.id === prId);
   if (!r) return;
   r.status = 'ordered';
   renderPrTable();
-  toast(`Requisition ${prId} approved and ordered from supplier.`, 'success');
+  toast(`Requisition ${prId} approved.`, 'success');
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  NOTIFICATIONS.unshift({ time: timeStr, message: `Purchase Requisition ${prId} approved. Order transmitted to supplier.`, type: 'info' });
+  const fs = window.firebaseDb && window.firebaseFS;
+  try { if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'purchase_requisitions', prId), { status: 'ordered' }); } catch (e) { addConsoleLog('WARN', 'Failed to update PR: ' + e.message); }
+  const notifData = { time: timeStr, message: `Purchase Requisition ${prId} approved.`, type: 'info', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
+  try { if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); } catch (_) {}
+  NOTIFICATIONS.unshift(notifData);
   renderRopNotifList();
 }
 
-function receiveRopStock(prId) {
+async function receiveRopStock(prId) {
   const r = REQUISITIONS.find(x => x.id === prId);
   if (!r) return;
   const m = MEDICINES.find(x => x.name === r.name);
   if (!m) return;
   m.stock += r.qty;
+  // Add to first existing batch or create a new batch entry
+  if (m.batches && m.batches.length > 0) {
+    m.batches[0].stock += r.qty;
+  } else {
+    m.batches = [{ batchNo: 'PR-' + prId.slice(0, 6), stock: r.qty, expiry: 'N/A', mrp: m.price || 0 }];
+  }
   m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
   r.status = 'received';
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  NOTIFICATIONS.unshift({ time: timeStr, message: `Received ${r.qty} units of ${m.name} from Order ${prId}. Stock level restored to ${m.stock} units.`, type: 'success' });
+  const fs = window.firebaseDb && window.firebaseFS;
+  // Persist to Firestore
+  try {
+    if (fs) {
+      if (m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), { stock: m.stock, status: m.status, batches: m.batches });
+      await fs.updateDoc(fs.doc(window.firebaseDb, 'purchase_requisitions', prId), { status: 'received' });
+    }
+  } catch (e) { addConsoleLog('WARN', 'Failed to sync stock/PR: ' + e.message); }
+  const notifData = { time: timeStr, message: `Received ${r.qty} units of ${m.name}. Stock level restored to ${m.stock} units.`, type: 'success', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
+  try { if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); } catch (_) {}
+  NOTIFICATIONS.unshift(notifData);
   renderMedTable();
   renderRopConfigTable();
   populateSimMedSelect();
@@ -587,7 +1001,11 @@ function receiveRopStock(prId) {
   toast(`Stock received! Added ${r.qty} units to ${m.name}.`, 'success');
 }
 
-function clearRopNotifs() { NOTIFICATIONS.length = 0; renderRopNotifList(); toast('Alert log cleared.', 'info'); }
+async function clearRopNotifs() {
+  NOTIFICATIONS.length = 0; renderRopNotifList();
+  try { const fs = window.firebaseDb && window.firebaseFS; if (fs) { const snap = await fs.getDocs(fs.collection(window.firebaseDb, 'notifications')); const batch = []; snap.forEach(d => batch.push(fs.deleteDoc(d.ref))); await Promise.all(batch); } } catch (_) {}
+  toast('Alert log cleared.', 'info');
+}
 
 function initBillItemAutocomplete() {
   const container = document.getElementById('billItemsContainer');

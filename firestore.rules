@@ -23,9 +23,10 @@ service cloud.firestore {
 
     // === USERS COLLECTION ===
     // Users can read their own profile; admins can read all
+    // Any authenticated user may create their own doc (needed if created via Firebase Console)
     match /users/{userId} {
       allow read: if isAuth() && (request.auth.uid == userId || hasRole('Admin'));
-      allow create: if isAuth() && hasRole('Admin');
+      allow create: if isAuth() && request.auth.uid == userId;
       allow update: if isAuth() && (request.auth.uid == userId || hasRole('Admin'));
       allow delete: if isAuth() && hasRole('Admin');
     }
@@ -105,8 +106,9 @@ service cloud.firestore {
     }
 
     // === STAFF (Personnel) COLLECTION ===
+    // Any authenticated user can read; only Admin can write
     match /staff/{staffId} {
-      allow read: if isAuth() && hasAnyRole(['Admin', 'Doctor', 'Staff']);
+      allow read: if isAuth();
       allow create: if isAuth() && hasRole('Admin');
       allow update: if isAuth() && hasRole('Admin');
       allow delete: if isAuth() && hasRole('Admin');
@@ -122,7 +124,7 @@ service cloud.firestore {
 
     // === STAFF SCHEDULES COLLECTION ===
     match /staff_schedules/{scheduleId} {
-      allow read: if isAuth() && hasAnyRole(['Admin', 'Doctor', 'Staff']);
+      allow read: if isAuth();
       allow write: if isAuth() && hasRole('Admin');
     }
 
@@ -137,6 +139,22 @@ service cloud.firestore {
       allow create: if isAuth() && hasRole('Admin');
       allow update: if false;
       allow delete: if false;
+    }
+
+    // === PURCHASE REQUISITIONS COLLECTION ===
+    match /purchase_requisitions/{prId} {
+      allow read: if isAuth() && hasAnyRole(['Admin', 'Pharmacist']);
+      allow create: if isAuth() && hasAnyRole(['Admin', 'Pharmacist']);
+      allow update: if isAuth() && hasAnyRole(['Admin', 'Pharmacist']);
+      allow delete: if isAuth() && hasRole('Admin');
+    }
+
+    // === NOTIFICATIONS COLLECTION ===
+    match /notifications/{notifId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && hasAnyRole(['Admin', 'Pharmacist', 'Staff']);
+      allow delete: if isAuth() && hasAnyRole(['Admin', 'Pharmacist']);
+      allow update: if false;
     }
 
     // === WARDS + BEDS COLLECTION ===
