@@ -134,6 +134,14 @@
             <p style="font-size:.72rem;color:var(--on-surface-var);margin-top:4px">Google Workspace user that the service account impersonates</p>
           </div>
           <hr style="border:none;border-top:1px solid var(--outline-var);margin:16px 0" />
+          <h4 style="font-size:.85rem;font-weight:700;margin-bottom:12px">Apps Script Connection</h4>
+          <button class="btn-secondary btn-sm" style="width:100%;margin-bottom:6px" onclick="openSyncConfigModal()">
+            <span class="material-icons-round">link</span> Set Web App URL &amp; API Key
+          </button>
+          <button class="btn-secondary btn-sm" style="width:100%" onclick="testConnection()">
+            <span class="material-icons-round">wifi</span> Test Connection
+          </button>
+          <hr style="border:none;border-top:1px solid var(--outline-var);margin:16px 0" />
           <h4 style="font-size:.85rem;font-weight:700;margin-bottom:12px">Manual Actions</h4>
           <button class="btn-primary" style="width:100%;margin-bottom:8px" onclick="startBulkSync()">
             <span class="material-icons-round">sync</span> Bulk Sync All Patients
