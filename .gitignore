@@ -5,3 +5,19 @@ Thumbs.db
 .gemini/
 scratch/
 
+# Editor
+.vscode/
+
+# Environment
+.env
+
+# Firebase
+.firebase/
+
+# Build
+dist/
+build/
+
+# Misc
+*.csv
+
