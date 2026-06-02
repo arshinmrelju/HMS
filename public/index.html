@@ -8,34 +8,406 @@
   <meta name="description" content="Select your role to access the Wellness Medicals Hospital Management System portal." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
   <link rel="stylesheet" href="css/main.css" />
   <link rel="stylesheet" href="css/login.css" />
   <style>
-    .selector-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-    .selector-container { max-width: 1000px; width: 100%; text-align: center; }
-    .selector-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 4px; }
-    .selector-sub { font-size: 0.88rem; color: var(--on-surface-var); margin-bottom: 32px; }
-    .portal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; margin-bottom: 32px; }
-    .portal-card { background: var(--surface-low); border: 1px solid var(--outline-var); border-radius: var(--radius-lg); padding: 24px 16px; text-align: center; cursor: pointer; transition: all 0.25s; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .portal-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.12); }
-    .portal-card .card-icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; }
-    .portal-card .card-label { font-weight: 700; font-size: 0.92rem; color: var(--on-surface); }
-    .portal-card .card-desc { font-size: 0.75rem; color: var(--on-surface-var); line-height: 1.4; }
-    .portal-card.admin .card-icon { background: rgba(37,99,235,0.12); color: #2563EB; }
-    .portal-card.admin:hover { border-color: #2563EB; }
-    .portal-card.doctor .card-icon { background: rgba(13,148,136,0.12); color: #0D9488; }
-    .portal-card.doctor:hover { border-color: #0D9488; }
-    .portal-card.staff .card-icon { background: rgba(124,58,237,0.12); color: #7C3AED; }
-    .portal-card.staff:hover { border-color: #7C3AED; }
-    .portal-card.pharmacist .card-icon { background: rgba(217,119,6,0.12); color: #D97706; }
-    .portal-card.pharmacist:hover { border-color: #D97706; }
-    .portal-card.labtech .card-icon { background: rgba(225,29,72,0.12); color: #E11D48; }
-    .portal-card.labtech:hover { border-color: #E11D48; }
-    .brand-top { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
-    .brand-top img { width: 42px; height: 42px; border-radius: 50%; }
-    @media (max-width: 500px) { .portal-grid { grid-template-columns: repeat(2, 1fr); } }
+    /* Premium Portal Selector Specific Styles */
+    .selector-body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 40px 20px;
+      background: linear-gradient(135deg, #e3f5f3 0%, #f3f6fa 40%, #e8f0fe 70%, #f5eefc 100%);
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    .selector-container {
+      max-width: 1100px;
+      width: 100%;
+      text-align: center;
+      z-index: 2;
+    }
+
+    /* Ambient Orb enhancements */
+    .ambient-bg .orb {
+      filter: blur(100px);
+      opacity: 0.18;
+      mix-blend-mode: multiply;
+    }
+    .orb-1 { width: 600px; height: 600px; background: #0d9488; top: -200px; left: -100px; }
+    .orb-2 { width: 500px; height: 500px; background: #2563eb; bottom: -150px; right: -100px; }
+    .orb-3 { width: 400px; height: 400px; background: #7c3aed; top: 30%; left: 40%; }
+
+    /* Brand Header Section */
+    .brand-header {
+      margin-bottom: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .brand-logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      border-radius: 50%;
+      padding: 4px;
+      box-shadow: 0 10px 30px rgba(13, 148, 136, 0.15);
+      margin-bottom: 16px;
+      position: relative;
+      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .brand-logo-wrap:hover {
+      transform: scale(1.06) rotate(2deg);
+    }
+    .brand-logo-wrap::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      border: 1.5px dashed rgba(13, 148, 136, 0.35);
+      animation: rotateDashed 25s linear infinite;
+    }
+    @keyframes rotateDashed {
+      to { transform: rotate(360deg); }
+    }
+
+    .brand-logo-wrap img {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .selector-title {
+      font-family: 'Outfit', var(--font-head);
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      margin-bottom: 8px;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #004d46 0%, #0d9488 50%, #2563eb 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 8px rgba(13, 148, 136, 0.05));
+    }
+
+    .selector-sub {
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #4b5563;
+      margin-bottom: 0;
+    }
+
+    /* Portal Cards Grid */
+    .portal-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 20px;
+      margin-bottom: 48px;
+      perspective: 1000px;
+    }
+
+    /* Staggered entry animation */
+    @keyframes cardIntro {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Premium Glass Card Design */
+    .portal-card {
+      background: rgba(255, 255, 255, 0.45);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1.5px solid rgba(255, 255, 255, 0.7);
+      border-radius: 20px;
+      padding: 32px 18px 24px;
+      text-align: center;
+      cursor: pointer;
+      text-decoration: none !important;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(31, 38, 135, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+      transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+      opacity: 0;
+      animation: cardIntro 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .portal-card * {
+      text-decoration: none !important;
+    }
+
+    .portal-card:nth-child(1) { animation-delay: 0.05s; }
+    .portal-card:nth-child(2) { animation-delay: 0.12s; }
+    .portal-card:nth-child(3) { animation-delay: 0.19s; }
+    .portal-card:nth-child(4) { animation-delay: 0.26s; }
+    .portal-card:nth-child(5) { animation-delay: 0.33s; }
+
+    /* Custom Theme Colors */
+    .portal-card.admin {
+      --theme-color: #2563eb;
+      --theme-color-rgb: 37, 99, 235;
+    }
+    .portal-card.doctor {
+      --theme-color: #0d9488;
+      --theme-color-rgb: 13, 148, 136;
+    }
+    .portal-card.staff {
+      --theme-color: #7c3aed;
+      --theme-color-rgb: 124, 58, 237;
+    }
+    .portal-card.pharmacist {
+      --theme-color: #d97706;
+      --theme-color-rgb: 217, 119, 6;
+    }
+    .portal-card.labtech {
+      --theme-color: #e11d48;
+      --theme-color-rgb: 225, 29, 74;
+    }
+
+    /* Hover States */
+    .portal-card:hover {
+      transform: translateY(-8px) scale(1.02);
+      border-color: rgba(var(--theme-color-rgb), 0.5);
+      background: rgba(255, 255, 255, 0.75);
+      text-decoration: none !important;
+      box-shadow: 
+        0 20px 40px rgba(var(--theme-color-rgb), 0.12),
+        0 4px 12px rgba(var(--theme-color-rgb), 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    /* Icon Styling */
+    .portal-card .card-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      background: rgba(var(--theme-color-rgb), 0.08);
+      color: var(--theme-color);
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      position: relative;
+    }
+
+    .portal-card:hover .card-icon {
+      background: var(--theme-color);
+      color: #ffffff;
+      transform: translateY(-4px) scale(1.12);
+      box-shadow: 0 8px 20px rgba(var(--theme-color-rgb), 0.3);
+    }
+
+    .portal-card .material-icons-round {
+      font-size: 28px;
+    }
+
+    /* Text elements inside cards */
+    .portal-card .card-label {
+      font-family: var(--font-head);
+      font-weight: 700;
+      font-size: 1rem;
+      color: #1e293b;
+      transition: color 0.3s;
+    }
+    .portal-card:hover .card-label {
+      color: var(--theme-color);
+    }
+
+    .portal-card .card-desc {
+      font-family: var(--font-body);
+      font-size: 0.78rem;
+      color: #64748b;
+      line-height: 1.45;
+      margin-bottom: 8px;
+    }
+
+    /* Pulsing active badge indicator */
+    .portal-status-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 99px;
+      background: rgba(16, 185, 129, 0.06);
+      border: 1.5px solid rgba(16, 185, 129, 0.15);
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: #059669;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      opacity: 0.85;
+      transition: opacity 0.3s;
+    }
+    .portal-card:hover .portal-status-badge {
+      opacity: 1;
+    }
+    .status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background-color: #10b981;
+      position: relative;
+    }
+    .status-dot::after {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 50%;
+      border: 1.5px solid #10b981;
+      animation: pulse 1.8s infinite ease-in-out;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(2.6); opacity: 0; }
+    }
+
+    /* Action Enter Indicator */
+    .card-arrow {
+      margin-top: auto;
+      color: var(--theme-color);
+      opacity: 0;
+      transform: translateY(4px);
+      transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-arrow .material-icons-round {
+      font-size: 18px;
+    }
+    .portal-card:hover .card-arrow {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Footer Design */
+    .selector-footer {
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .footer-text {
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    .techsiah-badge-enhanced {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.65);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1.5px solid rgba(226, 232, 240, 0.8);
+      border-radius: 99px;
+      padding: 6px 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+      text-decoration: none;
+      transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    }
+
+    .techsiah-badge-enhanced:hover {
+      background: #ffffff;
+      border-color: #2563eb;
+      box-shadow: 
+        0 10px 20px rgba(37, 99, 235, 0.08),
+        0 2px 6px rgba(37, 99, 235, 0.04);
+      transform: translateY(-2px);
+      text-decoration: none;
+    }
+
+    .techsiah-badge-enhanced svg {
+      width: 15px;
+      height: 15px;
+      display: block;
+      transition: transform 0.4s ease;
+    }
+    .techsiah-badge-enhanced:hover svg {
+      transform: rotate(8deg) scale(1.08);
+    }
+
+    .techsiah-badge-enhanced .techsiah-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 0.78rem;
+      color: #1e293b;
+      letter-spacing: -0.2px;
+      transition: color 0.3s ease;
+    }
+    .techsiah-badge-enhanced:hover .techsiah-text {
+      color: #2563eb;
+    }
+    .techsiah-badge-enhanced .techsiah-dot {
+      color: #2563eb;
+      transition: color 0.3s ease;
+    }
+
+    /* Responsive Queries */
+    @media (max-width: 1024px) {
+      .portal-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+      .portal-card:nth-child(4), .portal-card:nth-child(5) {
+        grid-column: span 1;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .selector-body {
+        padding: 30px 16px;
+      }
+      .selector-title {
+        font-size: 2rem;
+      }
+      .portal-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .selector-title {
+        font-size: 1.7rem;
+      }
+      .portal-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .portal-card {
+        padding: 24px 16px 20px;
+      }
+      .brand-logo-wrap img {
+        width: 46px;
+        height: 46px;
+      }
+    }
   </style>
 </head>
 <body class="login-body selector-body">
@@ -46,63 +418,111 @@
   </div>
 
   <div class="selector-container">
-    <div class="brand-top">
-      <img src="assets/hms-logo.jpg" alt="Wellness Medicals Logo" />
-      <div>
-        <h1 class="selector-title">Wellness Medicals</h1>
-        <p class="selector-sub">Select your portal to sign in</p>
+    <header class="brand-header">
+      <div class="brand-logo-wrap">
+        <img src="assets/hms-logo.jpg" alt="Wellness Medicals Logo" />
       </div>
-    </div>
+      <h1 class="selector-title">Wellness Medicals</h1>
+      <p class="selector-sub">Select your portal to sign in</p>
+    </header>
 
-    <div class="portal-grid">
+    <main class="portal-grid">
+      <!-- Admin Portal -->
       <a href="login-admin.html" class="portal-card admin">
-        <div class="card-icon"><span class="material-icons-round">admin_panel_settings</span></div>
+        <div class="portal-status-badge">
+          <span class="status-dot"></span>Active
+        </div>
+        <div class="card-icon">
+          <span class="material-icons-round">admin_panel_settings</span>
+        </div>
         <div class="card-label">Admin Portal</div>
         <div class="card-desc">System administration, reports, and full control</div>
+        <div class="card-arrow">
+          <span class="material-icons-round">arrow_forward</span>
+        </div>
       </a>
+
+      <!-- Doctor Portal -->
       <a href="login-doctor.html" class="portal-card doctor">
-        <div class="card-icon"><span class="material-icons-round">medical_services</span></div>
+        <div class="portal-status-badge">
+          <span class="status-dot"></span>Active
+        </div>
+        <div class="card-icon">
+          <span class="material-icons-round">medical_services</span>
+        </div>
         <div class="card-label">Doctor Portal</div>
         <div class="card-desc">Clinical workspace, patients, and prescriptions</div>
+        <div class="card-arrow">
+          <span class="material-icons-round">arrow_forward</span>
+        </div>
       </a>
+
+      <!-- Reception Portal (Fixed Icon: support_agent) -->
       <a href="login-staff.html" class="portal-card staff">
-        <div class="card-icon"><span class="material-icons-round">front_desk</span></div>
+        <div class="portal-status-badge">
+          <span class="status-dot"></span>Active
+        </div>
+        <div class="card-icon">
+          <span class="material-icons-round">support_agent</span>
+        </div>
         <div class="card-label">Reception Portal</div>
         <div class="card-desc">Patient registration, appointments, and front desk</div>
+        <div class="card-arrow">
+          <span class="material-icons-round">arrow_forward</span>
+        </div>
       </a>
+
+      <!-- Pharmacy Portal -->
       <a href="login-pharmacist.html" class="portal-card pharmacist">
-        <div class="card-icon"><span class="material-icons-round">medication</span></div>
+        <div class="portal-status-badge">
+          <span class="status-dot"></span>Active
+        </div>
+        <div class="card-icon">
+          <span class="material-icons-round">medication</span>
+        </div>
         <div class="card-label">Pharmacy Portal</div>
         <div class="card-desc">Inventory, billing, and prescription dispensing</div>
+        <div class="card-arrow">
+          <span class="material-icons-round">arrow_forward</span>
+        </div>
       </a>
+
+      <!-- Lab Portal -->
       <a href="login-labtech.html" class="portal-card labtech">
-        <div class="card-icon"><span class="material-icons-round">biotech</span></div>
+        <div class="portal-status-badge">
+          <span class="status-dot"></span>Active
+        </div>
+        <div class="card-icon">
+          <span class="material-icons-round">biotech</span>
+        </div>
         <div class="card-label">Lab Portal</div>
         <div class="card-desc">Test orders, results, and specimen tracking</div>
+        <div class="card-arrow">
+          <span class="material-icons-round">arrow_forward</span>
+        </div>
       </a>
-    </div>
+    </main>
 
-    <p class="login-footer" style="justify-content:center">
-      Wellness Medicals HMS &copy; 2026 &middot;
-      <span class="powered-by-wrapper">
-        Powered by
-        <a href="https://techsiah.web.app" target="_blank" class="techsiah-badge-login">
-          <svg class="logo-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="techsiah-grad-login" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#2563EB" />
-                <stop offset="100%" stop-color="#3B82F6" />
-              </linearGradient>
-            </defs>
-            <path d="M6 10C6 7.79086 7.79086 6 10 6H22C24.2091 6 26 7.79086 26 10V22C26 24.2091 24.2091 26 22 26H10C7.79086 26 6 24.2091 6 22V10Z" stroke="url(#techsiah-grad-login)" stroke-width="2.5" stroke-linecap="round" />
-            <path d="M12 11H20" stroke="url(#techsiah-grad-login)" stroke-width="2.5" stroke-linecap="round" />
-            <path d="M16 11V21" stroke="url(#techsiah-grad-login)" stroke-width="2.5" stroke-linecap="round" />
-            <circle cx="21" cy="21" r="2" fill="#2563EB" />
-          </svg>
-          <span class="techsiah-text">Techsiah<span class="techsiah-dot">.</span></span>
-        </a>
-      </span>
-    </p>
+    <footer class="selector-footer">
+      <p class="footer-text">
+        Wellness Medicals HMS &copy; 2026 &middot; All Rights Reserved
+      </p>
+      <a href="https://techsiah.web.app" target="_blank" class="techsiah-badge-enhanced">
+        <svg class="logo-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="techsiah-grad-login" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#2563EB" />
+              <stop offset="100%" stop-color="#3B82F6" />
+            </linearGradient>
+          </defs>
+          <path d="M6 10C6 7.79086 7.79086 6 10 6H22C24.2091 6 26 7.79086 26 10V22C26 24.2091 24.2091 26 22 26H10C7.79086 26 6 24.2091 6 22V10Z" stroke="url(#techsiah-grad-login)" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M12 11H20" stroke="url(#techsiah-grad-login)" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M16 11V21" stroke="url(#techsiah-grad-login)" stroke-width="2.5" stroke-linecap="round" />
+          <circle cx="21" cy="21" r="2" fill="#2563EB" />
+        </svg>
+        <span class="techsiah-text">Techsiah<span class="techsiah-dot">.</span></span>
+      </a>
+    </footer>
   </div>
 
   <script type="module" src="js/firebase-init.js"></script>

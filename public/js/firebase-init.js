@@ -175,11 +175,11 @@ window.esc = function esc(val) {
 };
 
 const ROLE_REDIRECTS = {
-  Admin: '/admin/dashboard',
-  Doctor: '/doctor/dashboard',
-  Staff: '/staff/dashboard',
-  Pharmacist: '/pharmacist/dashboard',
-  'Lab Tech': '/labtech/dashboard'
+  Admin: 'admin/dashboard.html',
+  Doctor: 'doctor/dashboard.html',
+  Staff: 'staff/dashboard.html',
+  Pharmacist: 'pharmacist/dashboard.html',
+  'Lab Tech': 'labtech/dashboard.html'
 };
 
 const HMS_AUTH = {
@@ -202,7 +202,7 @@ const HMS_AUTH = {
   async logout() {
     await signOut(auth);
     sessionStorage.removeItem('hms_session');
-    location.href = '/';
+    location.href = '../index.html';
   },
 
   async fetchProfile(uid) {
@@ -225,19 +225,19 @@ const HMS_AUTH = {
 
   requireAuth() {
     const user = this.getSession();
-    if (!user) { location.href = '/'; return null; }
+    if (!user) { location.href = '../index.html'; return null; }
     return user;
   },
 
   requirePortalAuth() {
     const user = this.getSession();
-    if (!user) { location.href = '/'; return null; }
+    if (!user) { location.href = '../index.html'; return null; }
     const expectedPortal = this.getPortalFromPath();
     if (expectedPortal) {
       const portalRoleMap = { admin: 'Admin', doctor: 'Doctor', staff: 'Staff', pharmacist: 'Pharmacist', labtech: 'Lab Tech' };
       const expectedRole = portalRoleMap[expectedPortal];
       if (expectedRole && user.role !== expectedRole) {
-        location.href = ROLE_REDIRECTS[user.role] || '/';
+        location.href = '../' + (ROLE_REDIRECTS[user.role] || 'index.html');
         return null;
       }
     }
@@ -245,12 +245,12 @@ const HMS_AUTH = {
   },
 
   getPortalFromPath() {
-    const match = window.location.pathname.match(/^\/(admin|doctor|staff|pharmacist|labtech)\//);
+    const match = window.location.pathname.match(/\/(admin|doctor|staff|pharmacist|labtech)\//);
     return match ? match[1] : null;
   },
 
   getRedirect(role) {
-    return ROLE_REDIRECTS[role] || '/';
+    return ROLE_REDIRECTS[role] || 'index.html';
   },
 
   hasRole(allowedRoles) {
@@ -261,7 +261,7 @@ const HMS_AUTH = {
   requireRole(allowedRoles) {
     const user = this.requireAuth();
     if (user && !allowedRoles.includes(user.role)) {
-      location.href = ROLE_REDIRECTS[user.role] || '/';
+      location.href = '../' + (ROLE_REDIRECTS[user.role] || 'index.html');
       return null;
     }
     return user;
