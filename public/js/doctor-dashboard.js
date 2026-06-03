@@ -110,6 +110,7 @@ function selectPatient(id) {
 
   const profile = document.getElementById('activePatientProfile');
   if (profile) {
+    const v = p.vitals || { bp: '120/80', pulse: '72', temp: '98.6\u00b0F', spo2: '98%' };
     profile.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:flex;align-items:center;gap:14px;padding-bottom:12px;border-bottom:1px solid var(--outline-var);">
@@ -127,10 +128,10 @@ function selectPatient(id) {
           <p style="font-size:0.75rem;font-weight:700;color:var(--on-surface-var);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Current Vitals</p>
           <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
             ${[
-              { label: 'Blood Pressure', val: p.vitals.bp, icon: 'favorite', alert: p.vitals.bp.split('/')[0] > 140 },
-              { label: 'Pulse Rate', val: p.vitals.pulse + ' bpm', icon: 'monitor_heart', alert: p.vitals.pulse > 100 },
-              { label: 'Temperature', val: p.vitals.temp, icon: 'thermostat', alert: parseFloat(p.vitals.temp) > 99.5 },
-              { label: 'SpO₂', val: p.vitals.spo2, icon: 'air', alert: parseInt(p.vitals.spo2) < 95 },
+              { label: 'Blood Pressure', val: v.bp, icon: 'favorite', alert: (v.bp||'').split('/')[0] > 140 },
+              { label: 'Pulse Rate', val: v.pulse + ' bpm', icon: 'monitor_heart', alert: v.pulse > 100 },
+              { label: 'Temperature', val: v.temp, icon: 'thermostat', alert: parseFloat(v.temp) > 99.5 },
+              { label: 'SpO\u2082', val: v.spo2, icon: 'air', alert: parseInt(v.spo2) < 95 },
             ].map(v => `
               <div style="background:${v.alert ? 'rgba(239,68,68,0.07)' : 'var(--surface-low)'};border:1px solid ${v.alert ? 'rgba(239,68,68,0.2)' : 'var(--outline-var)'};border-radius:var(--radius-sm);padding:10px 12px;display:flex;align-items:center;gap:8px;">
                 <span class="material-icons-round" style="font-size:18px;color:${v.alert ? '#ef4444' : 'var(--primary-light)'}">${v.icon}</span>
@@ -207,27 +208,143 @@ function removeMedication(index) {
   `).join('');
 }
 
-document.getElementById('presBuilderForm')?.addEventListener('submit', (e) => {
+document.getElementById('presBuilderForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!activePatientId) { toast('Please select a patient first.', 'warning'); return; }
   if (prescriptionMeds.length === 0) { toast('Add at least one medication to the prescription.', 'warning'); return; }
   const patient = PATIENT_QUEUE.find(p => p.id === activePatientId);
-  if (patient) {
-    patient.status = 'done';
-    renderPatientQueue();
+  if (!patient) { toast('Patient not found.', 'error'); return; }
+  const diagnosis = document.getElementById('presDiagnosis')?.value || '';
+  try {
+    const result = await window.API.createPrescription({
+      patient_id: patient.patientId || activePatientId,
+      appointment_id: activePatientId,
+      diagnosis: diagnosis,
+      notes: '',
+      items: prescriptionMeds.map(m => ({
+        medicine_name: m.med,
+        dosage: m.dosage,
+        frequency: '',
+        duration: '',
+        quantity: '',
+        instructions: ''
+      }))
+    });
+    if (result.success) {
+      patient.status = 'done';
+      renderPatientQueue();
+      toast(`Prescription for ${patient.name} sent to Pharmacy! (${prescriptionMeds.length} medication${prescriptionMeds.length > 1 ? 's' : ''})`, 'success', 'send');
+      prescriptionMeds.length = 0;
+      const listEl = document.getElementById('selectedMedsList');
+      if (listEl) listEl.innerHTML = '<span style="font-size:0.8rem;color:var(--outline);font-style:italic;">No drugs added yet. Enter items above.</span>';
+      const diag = document.getElementById('presDiagnosis');
+      if (diag) diag.value = '';
+      activePatientId = null;
+    }
+  } catch (e) {
+    toast('Failed to create prescription: ' + e.message, 'error');
   }
-  toast(`Prescription for ${patient?.name} sent to Pharmacy! (${prescriptionMeds.length} medication${prescriptionMeds.length > 1 ? 's' : ''})`, 'success', 'send');
-  prescriptionMeds.length = 0;
-  const listEl = document.getElementById('selectedMedsList');
-  if (listEl) listEl.innerHTML = '<span style="font-size:0.8rem;color:var(--outline);font-style:italic;">No drugs added yet. Enter items above.</span>';
-  const diag = document.getElementById('presDiagnosis');
-  if (diag) diag.value = '';
-  activePatientId = null;
 });
+
+let labTestsCache = null;
 
 function requestLabTest(patientId) {
   const patient = PATIENT_QUEUE.find(p => p.id === patientId);
-  toast(`Lab test request sent for ${patient?.name}!`, 'info', 'science');
+  if (!patient) { toast('Patient not found.', 'error'); return; }
+  showLabTestModal(patientId);
+}
+
+function showLabTestModal(patientId) {
+  let modal = document.getElementById('labTestModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'labTestModal';
+    modal.className = 'modal-overlay';
+    modal.onclick = (e) => { if (e.target === modal) closeModal(e, 'labTestModal'); };
+    modal.innerHTML = `
+      <div class="modal-panel" style="max-width:460px;">
+        <div class="modal-header">
+          <h3>Request Lab Test</h3>
+          <button class="modal-close" onclick="closeModal(event, 'labTestModal')">&times;</button>
+        </div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;padding:20px;">
+          <div class="form-group">
+            <label>Select Test</label>
+            <select id="labTestSelect" style="width:100%;background:var(--surface);border:1.5px solid var(--outline-var);padding:8px 10px;border-radius:var(--radius-sm);font-weight:600;">
+              <option value="">Loading tests...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Priority</label>
+            <select id="labTestPriority" style="width:100%;background:var(--surface);border:1.5px solid var(--outline-var);padding:8px 10px;border-radius:var(--radius-sm);font-weight:600;">
+              <option value="normal">Normal</option>
+              <option value="urgent">Urgent</option>
+              <option value="stat">STAT</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Notes (optional)</label>
+            <textarea id="labTestNotes" placeholder="Any specific instructions for the lab..." style="width:100%;height:70px;border:1.5px solid var(--outline-var);background:var(--surface-low);border-radius:var(--radius-sm);padding:8px;font-size:0.85rem;resize:none;"></textarea>
+          </div>
+          <button class="btn-primary" onclick="submitLabTestOrder('${esc(patientId)}')" style="width:100%;display:flex;justify-content:center;gap:8px;">
+            <span class="material-icons-round">send</span> Send Lab Order
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  openModal('labTestModal');
+  loadLabTestOptions(patientId);
+  document.getElementById('labTestNotes').value = '';
+  document.getElementById('labTestPriority').value = 'normal';
+}
+
+async function loadLabTestOptions() {
+  const select = document.getElementById('labTestSelect');
+  if (!select) return;
+  select.innerHTML = '<option value="">Loading tests...</option>';
+  try {
+    if (!labTestsCache) {
+      const result = await window.API.getLabTests();
+      if (result.success) labTestsCache = result.data || [];
+    }
+    const tests = labTestsCache;
+    if (tests.length === 0) {
+      select.innerHTML = '<option value="">No tests available</option>';
+      return;
+    }
+    select.innerHTML = '<option value="">-- Select a test --</option>' +
+      tests.map(t => `<option value="${esc(t.name || t.test_name || t.id)}">${esc(t.name || t.test_name || t.id)}</option>`).join('');
+  } catch (e) {
+    select.innerHTML = '<option value="">Error loading tests</option>';
+    addConsoleLog('WARN', 'Could not load lab tests: ' + e.message);
+  }
+}
+
+async function submitLabTestOrder(patientId) {
+  const select = document.getElementById('labTestSelect');
+  const testName = select?.value;
+  if (!testName) { toast('Please select a lab test.', 'warning'); return; }
+  const priority = document.getElementById('labTestPriority')?.value || 'normal';
+  const notes = document.getElementById('labTestNotes')?.value || '';
+  const patient = PATIENT_QUEUE.find(p => p.id === patientId);
+  const doctorId = window.HMS.getUser().uid;
+  try {
+    const result = await window.API.createLabOrder({
+      patient_id: patient?.patientId || patientId,
+      doctor_id: doctorId,
+      test_name: testName,
+      priority: priority,
+      notes: notes
+    });
+    if (result.success) {
+      toast(`Lab test request sent for ${patient?.name || patientId}!`, 'success', 'science');
+      closeModal(null, 'labTestModal');
+    }
+  } catch (e) {
+    toast('Failed to send lab order: ' + e.message, 'error');
+  }
 }
 
 function markConsultDone(patientId) {
@@ -250,36 +367,33 @@ function markConsultDone(patientId) {
   }
 }
 
-async function loadPatientQueueFromFirestore() {
+async function loadPatientQueue() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'appointments'), fs.where('status', 'in', ['waiting', 'in-progress']), fs.orderBy('createdAt', 'asc'));
-    const snap = await fs.getDocs(q);
-    if (snap.empty) return;
-    PATIENT_QUEUE = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        name: data.patientName || 'Unknown',
-        age: data.patientAge || 'N/A',
-        gender: data.patientGender || '',
-        complaint: data.complaint || '—',
-        priority: data.priority || 'normal',
-        status: data.status || 'waiting',
-        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
-        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
-        vitals: data.vitals || { bp: '120/80', pulse: '72', temp: '98.6°F', spo2: '98%' },
-        history: data.history || 'No known history recorded.'
-      };
-    });
+    const userId = window.HMS.getUser().uid;
+    const result = await window.API.getDoctorAppointments(userId, {});
+    if (!result.success) return;
+    const data = result.data || [];
+    PATIENT_QUEUE = data.map(d => ({
+      id: d.id,
+      patientId: d.patientId || d.patient_id || '',
+      name: d.patientName || d.patient_name || 'Unknown',
+      age: d.patientAge || d.patient_age || 'N/A',
+      gender: d.patientGender || d.patient_gender || '',
+      complaint: d.complaint || '—',
+      priority: d.priority || 'normal',
+      status: d.status || 'waiting',
+      time: d.time || (d.createdAt ? new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'),
+      timestamp: d.createdAt || new Date().toISOString(),
+      vitals: d.vitals || { bp: '120/80', pulse: '72', temp: '98.6\u00b0F', spo2: '98%' },
+      history: d.history || 'No known history recorded.'
+    }));
   } catch (e) {
     addConsoleLog('WARN', 'Could not load patient queue: ' + e.message);
   }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadPatientQueueFromFirestore();
+  await loadPatientQueue();
   const todayChip = document.querySelector(`#docSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
     sfChipSelect(todayChip, 'doc', 'today');

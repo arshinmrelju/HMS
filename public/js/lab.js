@@ -39,9 +39,14 @@ function capStatus(s) { return {ordered:'Ordered',processing:'Processing',ready:
 
 async function updateLabStatus(id, newStatus) {
   const o = LAB_ORDERS.find(x => x.id === id);
-  if (o) { o.status = newStatus; renderLabTable();
-    try { const fs = window.firebaseDb && window.firebaseFS; if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'lab_orders', id), { status: newStatus }); } catch (e) { /* ignore */ }
-    toast(`${id} marked as ${capStatus(newStatus)}`, 'success'); }
+  if (o) {
+    o.status = newStatus;
+    renderLabTable();
+    try {
+      await window.API.updateLabOrderStatus(id, newStatus);
+    } catch (e) { /* ignore */ }
+    toast(`${id} marked as ${capStatus(newStatus)}`, 'success');
+  }
 }
 
 function filterLabStatus(btn, status) {
@@ -118,7 +123,7 @@ function renderLabResults() {
           </div>
         `).join('')}
       </div>
-      <div style="margin-top:12px;text-align:right"><span style="font-size:.75rem;color:var(--primary-light);font-weight:600">View full report →</span></div>
+      <div style="margin-top:12px;text-align:right"><span style="font-size:.75rem;color:var(--primary-light);font-weight:600">View full report &rarr;</span></div>
     </div>
   `).join('');
 }
@@ -130,7 +135,7 @@ function renderLabReports() {
     <div class="report-row">
       <div class="report-icon"><span class="material-icons-round">description</span></div>
       <div class="report-info">
-        <strong>${r.type} – ${r.patient}</strong>
+        <strong>${r.type} &ndash; ${r.patient}</strong>
         <p>${r.id} · Completed today</p>
       </div>
       <button class="btn-secondary btn-sm" onclick="viewLabResult('${r.id}')"><span class="material-icons-round">visibility</span> View</button>
@@ -146,21 +151,25 @@ async function submitOrderTest(e) {
   if (!selected.length) { toast('Select at least one test', 'warning'); return; }
   const doctor = document.getElementById('labDoctor').value;
   const priority = document.getElementById('labPriority').value;
-  const fs = window.firebaseDb && window.firebaseFS;
   for (const test of selected) {
-    const docData = {
-      patientName: patient, testType: test, doctor,
-      status: 'ordered', priority,
-      createdAt: fs?.serverTimestamp?.() || new Date().toISOString()
-    };
-    let docRef;
-    try { if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'lab_orders'), docData); } catch (e) { addConsoleLog('WARN', 'Failed to save lab order: ' + e.message); }
-    LAB_ORDERS.unshift({
-      id: docRef?.id || `LAB${String(LAB_ORDERS.length+1).padStart(3,'0')}`,
-      patient, type: test, doctor,
-      time: new Date().toTimeString().slice(0,5),
-      status: 'ordered', priority
-    });
+    try {
+      const res = await window.API.createLabOrder({
+        patient_id: patient,
+        doctor_id: doctor,
+        test_id: test,
+        test_name: test,
+        priority: priority
+      });
+      const data = res.data || {};
+      LAB_ORDERS.unshift({
+        id: data.id || `LAB${String(LAB_ORDERS.length+1).padStart(3,'0')}`,
+        patient, type: test, doctor,
+        time: new Date().toTimeString().slice(0,5),
+        status: 'ordered', priority
+      });
+    } catch (e) {
+      addConsoleLog('WARN', 'Failed to save lab order: ' + e.message);
+    }
   }
   renderLabTable();
   closeModal(null,'orderTestModal');
@@ -203,7 +212,7 @@ function printLabReport(id) {
       <body>
         <div class="header">
           <h1>Wellness Medicals</h1>
-          <p>123 Health Avenue, Medical District • Phone: +1 (555) 123-4567 • Email: info@wellnessmedicals.com</p>
+          <p>123 Health Avenue, Medical District &bull; Phone: +1 (555) 123-4567 &bull; Email: info@wellnessmedicals.com</p>
         </div>
         
         <h2 style="margin-top: 0; color: #0f172a;">${r.type} Laboratory Report</h2>
@@ -251,7 +260,7 @@ function printLabReport(id) {
               window.close(); 
             }, 300);
           }
-        </script>
+        <\/script>
       </body>
     </html>
   `;
@@ -269,7 +278,8 @@ function initPatientAutocomplete() {
 
   function renderOptions(query = '') {
     const q = query.toLowerCase();
-    const patientSource = (window.allPatients && window.allPatients.length > 0) ? window.allPatients : PATIENTS_DB; const filtered = patientSource.filter(p => 
+    const patientSource = (window.allPatients && window.allPatients.length > 0) ? window.allPatients : PATIENTS_DB;
+    const filtered = patientSource.filter(p => 
       p.name.toLowerCase().includes(q) || p.phone.includes(q)
     );
 
@@ -312,34 +322,33 @@ function initPatientAutocomplete() {
   };
 }
 
-async function loadLabOrdersFromFirestore() {
+async function loadLabOrders() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'lab_orders'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
-    const snap = await fs.getDocs(q);
-    if (snap.empty) return;
-    snap.forEach(d => {
-      const data = d.data();
-      const order = {
-        id: d.id,
-        patient: data.patientName || data.patient || 'Unknown',
-        type: data.test || data.testType || 'General',
-        doctor: data.doctor || data.referredBy || '—',
-        time: data.createdAt?.toDate?.()?.toLocaleString?.() || data.time || '—',
-        status: data.status || 'ordered',
-        priority: data.priority || 'routine'
+    const res = await window.API.getLabOrders({ limit: 50 });
+    if (!res.success) return;
+    const orders = res.data || [];
+    orders.forEach(order => {
+      const entry = {
+        id: order.id,
+        patient: order.patient_name || order.patient || 'Unknown',
+        type: order.test_name || order.test || 'General',
+        doctor: order.doctor_name || order.doctor || '—',
+        time: order.created_at || order.time || '—',
+        status: order.status || 'ordered',
+        priority: order.priority || 'routine'
       };
-      LAB_ORDERS.push(order);
-      // If the order has results, add to LAB_RESULTS
-      if (data.results && Object.keys(data.results).length > 0) {
-        const resultVals = Object.entries(data.results).map(([k, v]) => ({
-          name: k.toUpperCase(), val: v,
+      LAB_ORDERS.push(entry);
+      if (order.results && Object.keys(order.results).length > 0) {
+        const resultVals = Object.entries(order.results).map(([k, v]) => ({
+          name: k.toUpperCase(),
+          val: v,
           ref: '—',
-          flag: data.critical ? 'high' : 'normal'
+          flag: order.critical ? 'high' : 'normal'
         }));
         LAB_RESULTS.push({
-          id: d.id, patient: order.patient, type: order.type,
+          id: order.id,
+          patient: entry.patient,
+          type: entry.type,
           values: resultVals
         });
       }
@@ -349,8 +358,41 @@ async function loadLabOrdersFromFirestore() {
   }
 }
 
+async function loadPatients() {
+  try {
+    const res = await window.API.getPatients({ limit: 1000 });
+    if (!res.success) return;
+    const patients = res.data || [];
+    patients.forEach(p => {
+      const name = p.name || p.patient_name || '';
+      const phone = p.phone || p.mobile || '';
+      PATIENTS_DB.push({ name, phone });
+    });
+    window.allPatients = PATIENTS_DB.slice();
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load patients: ' + e.message);
+  }
+}
+
+async function loadTests() {
+  try {
+    const res = await window.API.getLabTests();
+    if (!res.success) return;
+    const tests = res.data || [];
+    const container = document.getElementById('labTestsContainer') || document.querySelector('.test-checkboxes');
+    if (container) {
+      container.innerHTML = tests.map(t => {
+        const val = t.name || t.test_name || t.id;
+        return `<label class="checkbox-label"><input type="checkbox" name="tests" value="${val}"> <span>${val}</span></label>`;
+      }).join('');
+    }
+  } catch (e) {
+    addConsoleLog('WARN', 'Could not load tests: ' + e.message);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadLabOrdersFromFirestore();
+  await Promise.all([loadLabOrders(), loadPatients(), loadTests()]);
   renderLabTable();
   renderLabResults();
   renderLabReports();

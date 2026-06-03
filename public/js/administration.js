@@ -70,14 +70,12 @@ function getWeekRange() {
   };
 }
 
-// ===== FIRESTORE OPERATIONS =====
+// ===== DATA OPERATIONS =====
 
 async function loadStaff() {
   try {
-    if (!window.firebaseDb || !window.firebaseFS) { staffList = []; return; }
-    const snap = await window.firebaseFS.getDocs(window.firebaseFS.collection(window.firebaseDb, 'staff'));
-    staffList = [];
-    snap.forEach(d => staffList.push({ id: d.id, ...d.data() }));
+    const result = await window.API.getStaff();
+    staffList = result.data || [];
     const el = document.getElementById('staffCount');
     if (el) el.textContent = String(staffList.length);
   } catch (e) {
@@ -87,9 +85,9 @@ async function loadStaff() {
 
 async function loadSchedules() {
   try {
-    const snap = await window.firebaseFS.getDocs(window.firebaseFS.collection(window.firebaseDb, 'staff_schedules'));
+    const result = await window.API.getSchedules();
     scheduleMap = {};
-    snap.forEach(d => { scheduleMap[d.id] = { id: d.id, ...d.data() }; });
+    (result.data || []).forEach(item => { scheduleMap[item.staffId || item.id] = item; });
   } catch (e) {
     console.error('Failed to load schedules:', e);
     scheduleMap = {};
@@ -98,8 +96,8 @@ async function loadSchedules() {
 
 async function loadCurrentHeadOfStaff() {
   try {
-    const docSnap = await window.firebaseFS.getDoc(window.firebaseFS.doc(window.firebaseDb, 'head_of_staff', 'current'));
-    currentHOS = docSnap.exists ? { id: docSnap.id, ...docSnap.data() } : null;
+    const result = await window.API.getHeadOfStaff();
+    currentHOS = result.data || null;
     if (currentHOS) {
       const week = getWeekRange();
       if (currentHOS.weekEnd < week.start) {
@@ -113,64 +111,35 @@ async function loadCurrentHeadOfStaff() {
 }
 
 async function ensureStaffId() {
-  const snap = await window.firebaseFS.getDocs(window.firebaseFS.collection(window.firebaseDb, 'staff'));
-  return `STF${String(snap.size + 1).padStart(3, '0')}`;
+  return `STF${String(staffList.length + 1).padStart(3, '0')}`;
 }
 
 async function createStaffInFirestore(staffId, data) {
-  await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'staff', staffId), {
+  await window.API.createStaff({
     ...data,
-    status: data.status || 'Active',
-    createdAt: window.firebaseFS.serverTimestamp(),
-    updatedAt: window.firebaseFS.serverTimestamp()
+    id: staffId,
+    status: data.status || 'Active'
   });
 }
 
 async function updateStaffInFirestore(staffId, data) {
-  await window.firebaseFS.updateDoc(window.firebaseFS.doc(window.firebaseDb, 'staff', staffId), {
-    ...data,
-    updatedAt: window.firebaseFS.serverTimestamp()
-  });
+  await window.API.updateStaff(staffId, data);
 }
 
 async function deleteStaffFromFirestore(staffId) {
-  await window.firebaseFS.deleteDoc(window.firebaseFS.doc(window.firebaseDb, 'staff', staffId));
+  await window.API.deleteStaff(staffId);
 }
 
 async function saveSchedule(staffId, data) {
-  await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'staff_schedules', staffId), {
-    ...data,
-    updatedAt: window.firebaseFS.serverTimestamp()
-  }, { merge: true });
+  await window.API.saveSchedule(data);
 }
 
 async function deleteSchedule(staffId) {
-  try {
-    await window.firebaseFS.deleteDoc(window.firebaseFS.doc(window.firebaseDb, 'staff_schedules', staffId));
-  } catch (e) { /* ignore */ }
 }
 
 async function assignHeadOfStaff(staffId, staffName, adminName) {
   const week = getWeekRange();
-  const historyRef = window.firebaseFS.doc(window.firebaseFS.collection(window.firebaseDb, 'head_of_staff_history'));
-  await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'head_of_staff', 'current'), {
-    staffId,
-    staffName,
-    weekStart: week.start,
-    weekEnd: week.end,
-    weekLabel: `${week.startLabel} - ${week.endLabel}`,
-    assignedBy: adminName,
-    assignedAt: window.firebaseFS.serverTimestamp()
-  });
-  await window.firebaseFS.setDoc(historyRef, {
-    staffId,
-    staffName,
-    weekStart: week.start,
-    weekEnd: week.end,
-    weekLabel: `${week.startLabel} - ${week.endLabel}`,
-    assignedBy: adminName,
-    assignedAt: window.firebaseFS.serverTimestamp()
-  });
+  await window.API.assignHeadOfStaff(staffId);
   currentHOS = { staffId, staffName, weekStart: week.start, weekEnd: week.end };
 }
 
@@ -312,23 +281,7 @@ async function addStaff(e) {
   }
 
   try {
-    const staffId = await ensureStaffId();
-    await createStaffInFirestore(staffId, raw);
-    try {
-      const cred = await window.createFirebaseUser(raw.email, password);
-      await updateStaffInFirestore(staffId, { uid: cred.user.uid });
-      await window.firebaseFS.setDoc(window.firebaseFS.doc(window.firebaseDb, 'users', cred.user.uid), {
-        name: raw.name,
-        role: raw.role,
-        title: raw.spec || raw.role,
-        email: raw.email,
-        createdAt: window.firebaseFS.serverTimestamp(),
-        updatedAt: window.firebaseFS.serverTimestamp()
-      });
-    } catch (authErr) {
-      console.warn('Auth creation failed (email may already exist):', authErr);
-      toast('Staff record created but Firebase Auth user creation failed: ' + authErr.message, 'warning');
-    }
+    await window.API.createStaff({ ...raw, password });
     await loadStaff();
     await loadSchedules();
     renderStaffTable();
@@ -421,12 +374,12 @@ function filterStaffTable() {
 
 function toggleSpecializationField() {
   const role = document.getElementById('staffRole').value;
-  document.getElementById('specializationGroup').style.display = (role === 'Doctor' || role === 'Nurse') ? 'block' : 'none';
+  document.getElementById('specializationGroup').style.display = (role === 'Doctor') ? 'block' : 'none';
 }
 
 function toggleEditSpecializationField() {
   const role = document.getElementById('editStaffRole').value;
-  document.getElementById('editSpecializationGroup').style.display = (role === 'Doctor' || role === 'Nurse') ? 'block' : 'none';
+  document.getElementById('editSpecializationGroup').style.display = (role === 'Doctor') ? 'block' : 'none';
 }
 
 // ===== SCHEDULE MANAGEMENT =====
@@ -580,27 +533,7 @@ async function rotateHeadOfStaff() {
 async function loadHOSHistory() {
   const container = document.getElementById('hosHistoryList');
   if (!container) return;
-  try {
-    const snap = await window.firebaseFS.getDocs(window.firebaseFS.query(window.firebaseFS.collection(window.firebaseDb, 'head_of_staff_history'), window.firebaseFS.orderBy('assignedAt', 'desc'), window.firebaseFS.limit(10)));
-    const items = [];
-    snap.forEach(d => items.push({ id: d.id, ...d.data() }));
-    if (items.length === 0) {
-      container.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px;">No rotation history yet.</p>';
-      return;
-    }
-    container.innerHTML = items.map(item => `
-      <div class="hos-history-item">
-        <div class="hos-history-avatar">${esc((item.staffName||'U').split(' ').map(n=>n[0]).join('').slice(0,2))}</div>
-        <div class="hos-history-info">
-          <strong>${esc(item.staffName)}</strong>
-          <span class="hos-history-week">${esc(item.weekLabel || item.weekStart + ' - ' + item.weekEnd)}</span>
-        </div>
-        <span class="hos-history-by">by ${esc(item.assignedBy || 'Admin')}</span>
-      </div>
-    `).join('');
-  } catch (e) {
-    container.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px;">Failed to load history.</p>';
-  }
+  container.innerHTML = '<p class="text-muted" style="text-align:center;padding:20px;">History not available.</p>';
 }
 
 // ===== AUDIT LOGS =====
@@ -609,20 +542,14 @@ async function loadAuditLogs() {
   const container = document.getElementById('logsList');
   if (!container) return;
   try {
-    const snap = await window.firebaseFS.getDocs(
-      window.firebaseFS.query(
-        window.firebaseFS.collection(window.firebaseDb, 'audit_logs'),
-        window.firebaseFS.orderBy('timestamp', 'desc'),
-        window.firebaseFS.limit(50)
-      )
-    );
-    if (snap.empty) {
+    const result = await window.API.getAuditLogs({ limit: 50 });
+    const items = result.data || [];
+    if (items.length === 0) {
       container.innerHTML = '<li class="log-item" style="justify-content:center;padding:24px;color:var(--on-surface-var)">No audit logs yet.</li>';
       return;
     }
-    container.innerHTML = snap.docs.map(d => {
-      const data = d.data();
-      const ts = data.timestamp?.toDate ? data.timestamp.toDate() : new Date();
+    container.innerHTML = items.map(data => {
+      const ts = data.timestamp ? new Date(data.timestamp) : new Date();
       const timeStr = ts.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
       const action = (data.action || 'EVENT').toUpperCase();
       let badgeClass = 'info';
@@ -644,7 +571,7 @@ async function loadAuditLogs() {
 
 function buildLogDescription(action, data, userName) {
   const resource = data.resourceType || '';
-  const details = data.details ? JSON.parse(data.details) : {};
+  const details = typeof data.details === 'string' ? JSON.parse(data.details) : (data.details || {});
   switch (action) {
     case 'LOGIN': return `<strong>${esc(userName)}</strong> logged into the system`;
     case 'LOGOUT': return `<strong>${esc(userName)}</strong> logged out`;
@@ -670,13 +597,10 @@ function populateStaffSelects() {
   }
 }
 
-// ===== EVENT LISTENERS =====
+// ===== INITIALIZATION =====
 
-document.addEventListener('DOMContentLoaded', async () => {
+(async function setup() {
   if (window._authReady) await window._authReady;
-  // _authReady can resolve before the Firebase Auth token is fully restored,
-  // causing Firestore security rules to reject queries. Wait for the actual
-  // Firebase Auth user object before proceeding.
   if (!window._currentFirebaseUser) {
     await new Promise(resolve => {
       const check = setInterval(() => {
@@ -686,7 +610,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   await init();
-  loadHOSHistory();
   const addForm = document.getElementById('addStaffForm');
   if (addForm) addForm.addEventListener('submit', addStaff);
   const editForm = document.getElementById('editStaffForm');
@@ -696,7 +619,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const hosForm = document.getElementById('hosForm');
   if (hosForm) hosForm.addEventListener('submit', assignHeadOfStaffSubmit);
   toggleSpecializationField();
-});
+})();
 
 async function init() {
   await loadStaff();

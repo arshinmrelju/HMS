@@ -1,9 +1,6 @@
 'use strict';
 HMS.requireAuth();
 
-let db;
-let fs;
-
 let allAppts = [];
 let filteredAppts = [];
 let selectedDate = new Date();
@@ -14,9 +11,21 @@ let appointmentEntryMode = 'scheduled';
 
 async function loadAppointments() {
   try {
-    const snap = await fs.getDocs(fs.query(fs.collection(db, 'appointments'), fs.orderBy('date', 'desc'), fs.orderBy('time', 'asc')));
-    allAppts = [];
-    snap.forEach(d => allAppts.push({ id: d.id, ...d.data() }));
+    const result = await window.API.getAppointments({ limit: 500 });
+    allAppts = result.data.map(a => ({
+      id: a.id,
+      patient: a.patient_name || 'Unknown',
+      patient_id: a.patient_id,
+      doctor: a.doctor_name || 'Unassigned',
+      doctor_id: a.doctor_id,
+      dept: a.type || 'General',
+      date: a.appointment_date,
+      time: a.appointment_time || '09:00',
+      type: a.type || 'Consultation',
+      status: a.status || 'scheduled',
+      reason: a.reason || '',
+      notes: a.notes || ''
+    }));
   } catch (e) {
     console.error('Failed to load appointments:', e);
     allAppts = [];
@@ -45,7 +54,8 @@ function renderCalendarStrip() {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     d.setHours(0,0,0,0);
-    const hasAppts = allAppts.some(a => a.date === d.toISOString().slice(0,10));
+    const dateStr = d.toISOString().slice(0,10);
+    const hasAppts = allAppts.some(a => a.date === dateStr);
     const isToday = d.getTime() === today.getTime();
     const isSelected = d.getTime() === selectedDate.getTime();
     const div = document.createElement('div');
@@ -70,7 +80,6 @@ function renderTimeline() {
   if (dateSubEl) dateSubEl.textContent = formatDateLong(selectedDate);
 
   const dayAppts = filteredAppts.filter(a => a.date === dateStr);
-  const hours = ['08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','14:00','14:30','15:00','15:30','16:00','16:30','17:00'];
 
   if (dayAppts.length === 0) {
     timeline.innerHTML = '<div style="text-align:center;padding:48px;color:var(--on-surface-var)"><span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:12px;color:var(--outline-var)">event_busy</span><p>No appointments for this day</p><div class="empty-appt-actions"><button class="btn-secondary" onclick="openSpotVisit()"><span class="material-icons-round">person_add</span> Spot Visit</button><button class="btn-primary" onclick="openBookAppointment()"><span class="material-icons-round">add</span> Book Appointment</button></div></div>';
@@ -178,12 +187,9 @@ function renderCalendarGrid() {
   const first = new Date(year, month, 1);
   const startDay = (first.getDay() + 6) % 7;
   const daysInMonth = new Date(year, month+1, 0).getDate();
-
   const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let html = `<div class="cal-grid-header">${dayNames.map(d => `<div class="cal-grid-day-label">${d}</div>`).join('')}</div>`;
-
   for (let i = 0; i < startDay; i++) html += '<div class="cal-cell other-month"></div>';
-
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dayAppts = allAppts.filter(a => a.date === dateStr).slice(0,3);
@@ -197,20 +203,20 @@ function renderCalendarGrid() {
 }
 
 function viewAppt(id) {
-  const a = allAppts.find(x => x.id === id);
+  const a = allAppts.find(x => String(x.id) === String(id));
   if (!a) return;
   toast(`${a.patient} – ${a.type} at ${formatTime12(a.time)}`, 'info', 'event');
 }
 
 async function editApptStatus(id) {
   const statuses = ['confirmed','pending','completed','cancelled'];
-  const a = allAppts.find(x => x.id === id);
+  const a = allAppts.find(x => String(x.id) === String(id));
   if (!a) return;
   const idx = statuses.indexOf(a.status);
   const newStatus = statuses[(idx+1) % statuses.length];
   a.status = newStatus;
   try {
-    await fs.updateDoc(fs.doc(db, 'appointments', id), { status: newStatus, updatedAt: fs.serverTimestamp() });
+    await window.API.updateAppointment(id, { status: newStatus });
   } catch (e) { console.warn('Status update failed:', e); }
   filterAppointments();
   toast(`Status updated to ${cap(newStatus)}`, 'success');
@@ -262,35 +268,48 @@ function openSpotVisit() {
 async function submitBookAppt(e) {
   e.preventDefault();
   const isSpot = appointmentEntryMode === 'spot';
+  const patientName = document.getElementById('apptPatient').value;
+  const patient = (window.allPatients || []).find(p =>
+    `${p.fname} ${p.lname}`.toLowerCase() === patientName.toLowerCase()
+  );
+  const doctorName = document.getElementById('apptDoctor').value;
+  const doctors = await window.API.getDoctors().catch(() => ({ data: [] }));
+  const doctor = doctors.data.find(d => d.name.toLowerCase() === doctorName.toLowerCase());
+
   const data = {
-    patient: document.getElementById('apptPatient').value,
-    doctor: document.getElementById('apptDoctor').value,
-    dept: document.getElementById('apptDept').value || 'General',
-    date: document.getElementById('apptDate').value,
-    time: document.getElementById('apptTime').value,
-    type: isSpot ? 'Walk-in' : document.getElementById('apptType').value,
+    patient_id: patient ? patient.id : null,
+    doctor_id: doctor ? doctor.id : null,
+    appointment_date: document.getElementById('apptDate').value,
+    appointment_time: document.getElementById('apptTime').value,
+    type: isSpot ? 'spot visit' : (document.getElementById('apptType').value || 'scheduled').toLowerCase(),
     status: 'confirmed',
-    notes: document.getElementById('apptNotes').value || (isSpot ? 'Spot visit / no prior appointment' : ''),
+    reason: document.getElementById('apptNotes').value || (isSpot ? 'Spot visit / no prior appointment' : ''),
   };
+
   const submitBtn = e.target.querySelector('button[type="submit"]');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Booking...';
   try {
-    const docRef = await fs.addDoc(fs.collection(db, 'appointments'), {
-      ...data,
-      createdAt: fs.serverTimestamp(),
-      updatedAt: fs.serverTimestamp()
-    });
-    const newA = { id: docRef.id, ...data };
+    const result = await window.API.createAppointment(data);
+    const newA = {
+      id: result.data.id,
+      patient: patientName,
+      doctor: doctorName,
+      dept: doctor ? doctor.title || 'General' : 'General',
+      date: data.appointment_date,
+      time: data.appointment_time,
+      type: data.type,
+      status: 'confirmed',
+    };
     allAppts.push(newA);
-    selectedDate = new Date(`${data.date}T00:00:00`);
+    selectedDate = new Date(`${data.appointment_date}T00:00:00`);
     closeModal(null, 'bookApptModal');
     const form = document.getElementById('bookApptForm');
     if (form) form.reset();
     setAppointmentModalMode('scheduled');
     renderCalendarStrip();
     filterAppointments();
-    toast(`${isSpot ? 'Spot visit registered' : 'Appointment booked'} for ${data.patient}!`, 'success');
+    toast(`${isSpot ? 'Spot visit registered' : 'Appointment booked'} for ${patientName}!`, 'success');
   } catch (err) {
     toast('Failed to book: ' + err.message, 'error');
   }
@@ -323,19 +342,11 @@ function initPatientAutocomplete() {
     `).join('');
   }
 
-  input.addEventListener('focus', () => {
-    renderOptions(input.value);
-    dropdown.classList.add('active');
-  });
-  input.addEventListener('input', () => {
-    renderOptions(input.value);
-    dropdown.classList.add('active');
-  });
+  input.addEventListener('focus', () => { renderOptions(input.value); dropdown.classList.add('active'); });
+  input.addEventListener('input', () => { renderOptions(input.value); dropdown.classList.add('active'); });
   document.addEventListener('click', (e) => {
     const wrapper = document.getElementById('patientAutocomplete');
-    if (wrapper && !wrapper.contains(e.target)) {
-      dropdown.classList.remove('active');
-    }
+    if (wrapper && !wrapper.contains(e.target)) dropdown.classList.remove('active');
   });
 
   window.selectApptPatient = function(val) {
@@ -345,8 +356,6 @@ function initPatientAutocomplete() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  db = window.firebaseDb;
-  fs = window.firebaseFS;
   const dateInput = document.getElementById('apptDate');
   if (dateInput) dateInput.value = localDateValue(new Date());
   loadAppointments();

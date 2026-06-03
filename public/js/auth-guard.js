@@ -46,7 +46,12 @@ function getCurrentRoute() {
 
 function requireRole(allowedRoles) {
   return new Promise((resolve) => {
-    const check = () => {
+    const check = (authResolved) => {
+      // SECURITY: if auth didn't resolve successfully (timeout or explicit false), redirect to login.
+      if (!authResolved) {
+        window.location.href = '/';
+        return;
+      }
       const user = window.HMS ? window.HMS.getUser() : null;
       if (!user) {
         window.location.href = '/';
@@ -59,16 +64,28 @@ function requireRole(allowedRoles) {
       }
       resolve(user);
     };
-    if (window._authReady) {
+
+    const waitForAuth = () => {
       window._authReady.then(check);
+    };
+
+    if (window._authReady) {
+      waitForAuth();
     } else {
+      // Poll until firebase-init.js has set window._authReady.
       const poll = setInterval(() => {
         if (window._authReady !== undefined) {
           clearInterval(poll);
-          window._authReady.then(check);
+          clearTimeout(giveUp);
+          waitForAuth();
         }
       }, 50);
-      setTimeout(() => { clearInterval(poll); check(); }, 3000);
+      // SECURITY: if firebase-init.js never loads within 5s, redirect to login — do NOT pass through.
+      const giveUp = setTimeout(() => {
+        clearInterval(poll);
+        console.warn('[HMS Security] Auth system did not initialize in time. Redirecting to login.');
+        window.location.href = '/';
+      }, 5000);
     }
   });
 }

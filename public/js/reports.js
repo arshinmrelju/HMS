@@ -12,10 +12,32 @@ function esc(val) {
   }) : (val == null ? '' : String(val));
 }
 
-let transactionList = JSON.parse(localStorage.getItem('hms_upi_transactions')) || [];
+let transactionList = [];
 
-function saveTransactions() {
-  localStorage.setItem('hms_upi_transactions', JSON.stringify(transactionList));
+function apiTxnToUI(txn) {
+  return {
+    id: txn.id || txn.upi_transaction_id || '',
+    patientName: txn.patient_name || '',
+    patientId: txn.patient_id || '',
+    vpa: txn.upi_transaction_id || '',
+    amount: txn.total || 0,
+    time: txn.created_at || '',
+    app: txn.payment_method || 'UPI',
+    status: txn.payment_status || 'PENDING'
+  };
+}
+
+async function loadTransactions() {
+  try {
+    const data = await window.API.getTransactions({ limit: 500 });
+    transactionList = (data || []).map(apiTxnToUI);
+  } catch (e) {
+    console.error('Failed to load transactions:', e);
+    transactionList = [];
+  }
+  renderTxnTable();
+  updateKPIs();
+  updateCharts();
 }
 
 function addConsoleLog(type, msg) {
@@ -171,28 +193,35 @@ function syncPhonePeHistory() {
       if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round">sync</span> Sync PhonePe History'; }
       if (progressWrap) progressWrap.style.display = 'none';
 
-      // Add a mock transaction for demonstration
-      var mockTxn = {
-        id: 'PP-' + String(Date.now()).slice(-8),
-        patientName: 'Demo Patient',
-        patientId: 'WM-001',
-        vpa: 'demo@phonepe',
-        amount: Math.round(Math.random() * 5000) + 500,
-        time: new Date().toISOString(),
-        app: 'PhonePe',
-        status: 'SUCCESS'
-      };
-      transactionList.unshift(mockTxn);
-      saveTransactions();
-      renderTxnTable();
-      updateKPIs();
-      updateCharts();
-      addConsoleLog('SUCCESS', 'Sync completed. ' + transactionList.length + ' transactions in ledger.');
-      toast('PhonePe history sync completed!', 'success', 'sync');
+      (async () => {
+        try {
+          var mockAmount = Math.round(Math.random() * 5000) + 500;
+          await window.API.createTransaction({
+            patient_name: 'Demo Patient',
+            patient_id: 'WM-001',
+            invoice_no: '',
+            type: 'upi',
+            description: 'PhonePe sync demo',
+            amount: mockAmount,
+            discount: 0,
+            tax: 0,
+            total: mockAmount,
+            payment_method: 'PhonePe',
+            payment_status: 'SUCCESS',
+            upi_transaction_id: 'PP-' + String(Date.now()).slice(-8),
+            created_by: user?.uid || 'system'
+          });
+          await loadTransactions();
+          addConsoleLog('SUCCESS', 'Sync completed. ' + transactionList.length + ' transactions in ledger.');
+          toast('PhonePe history sync completed!', 'success', 'sync');
+        } catch (e) {
+          addConsoleLog('ERROR', 'Sync failed: ' + e.message);
+          toast('PhonePe sync failed!', 'error', 'sync');
+        }
+      })();
     }
   }, 800);
 }
-
 
 function toggleApiSettings() {
   const form = document.getElementById('phonepeSettingsForm');
@@ -232,10 +261,8 @@ function loadApiConfig() {
   } catch (e) { /* ignore */ }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  renderTxnTable();
-  updateKPIs();
-  updateCharts();
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadTransactions();
   addConsoleLog('INFO', 'Reports module initialized. UPI configuration must be done server-side in production.');
 
   const apiToggle = document.getElementById('apiSettingsToggle');

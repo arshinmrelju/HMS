@@ -2,22 +2,12 @@
 
 HMS.requireAuth();
 
-let db;
-let fs;
-
-
 let allPatients = []; window.allPatients = allPatients;
 let filteredPatients = [];
 let currentPage = 1;
 const ROWS_PER_PAGE = 10;
 let activeFilter = 'all';
 let sortCol = null, sortDir = 1;
-
-function esc(val) {
-  return typeof val === 'string' ? val.replace(/[&<>"']/g, function(m) {
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];
-  }) : (val == null ? '' : String(val));
-}
 
 function renderTable() {
   const tbody = document.getElementById('patientTableBody');
@@ -31,24 +21,24 @@ function renderTable() {
   tbody.innerHTML = pageItems.map(p => `
     <tr>
       <td><input type="checkbox" /></td>
-      <td><code style="font-size:.78rem;background:var(--surface-mid);padding:2px 6px;border-radius:4px;color:var(--primary-light)">${esc(p.id ? p.id.slice(0,8) : '--')}</code></td>
+      <td><code style="font-size:.78rem;background:var(--surface-mid);padding:2px 6px;border-radius:4px;color:var(--primary-light)">${esc(p.id)}</code></td>
       <td>
         <div class="patient-cell">
           <div class="mini-avatar">${esc((p.fname||'U')[0])}${esc((p.lname||'')[0])}</div>
           <div>
             <div style="font-weight:700">${esc(p.fname)} ${esc(p.lname)}</div>
-            <div style="font-size:.72rem;color:var(--on-surface-var)">${esc(p.age)} yrs · ${esc(p.blood)}</div>
+            <div style="font-size:.72rem;color:var(--on-surface-var)">${esc(p.age)} yrs · ${esc(p.blood_group)}</div>
           </div>
         </div>
       </td>
       <td style="font-size:.82rem">${esc(p.contact)}</td>
-      <td style="font-size:.82rem">${esc(p.dept)}</td>
-      <td style="font-size:.82rem">${formatDate(p.lastVisit)}</td>
+      <td style="font-size:.82rem">${esc(p.department)}</td>
+      <td style="font-size:.82rem">${formatDate(p.last_visit)}</td>
       <td><span class="badge-status ${p.status}">${esc(cap(p.status))}</span></td>
       <td>
-        <button class="icon-btn" title="View" onclick="viewPatient('${esc(p.id)}')"><span class="material-icons-round">visibility</span></button>
-        <button class="icon-btn" title="Edit" onclick="editPatient('${esc(p.id)}')"><span class="material-icons-round">edit</span></button>
-        <button class="icon-btn danger" title="Delete" onclick="deletePatient('${esc(p.id)}')"><span class="material-icons-round">delete</span></button>
+        <button class="icon-btn" title="View" onclick="viewPatient(${p.id})"><span class="material-icons-round">visibility</span></button>
+        <button class="icon-btn" title="Edit" onclick="editPatient(${p.id})"><span class="material-icons-round">edit</span></button>
+        <button class="icon-btn danger" title="Delete" onclick="deletePatient(${p.id})"><span class="material-icons-round">delete</span></button>
       </td>
     </tr>
   `).join('');
@@ -89,7 +79,6 @@ function toggleAdvancedSearchPanel() {
     bar.style.borderBottomRightRadius = '';
     btn.style.background = '';
     btn.style.color = '';
-    // Reset filters
     const minAge = document.getElementById('minAgeFilter');
     const maxAge = document.getElementById('maxAgeFilter');
     const place = document.getElementById('placeFilter');
@@ -109,8 +98,7 @@ function applyFilters() {
   const search = (document.getElementById('patientSearch')?.value || '').toLowerCase();
   const dept = document.getElementById('deptFilter')?.value || '';
   const status = document.getElementById('statusFilter')?.value || '';
-  
-  // Advanced search parameters
+
   const minAge = parseInt(document.getElementById('minAgeFilter')?.value) || 0;
   const maxAge = parseInt(document.getElementById('maxAgeFilter')?.value) || 999;
   const place = (document.getElementById('placeFilter')?.value || '').toLowerCase();
@@ -120,19 +108,10 @@ function applyFilters() {
   filteredPatients = allPatients.filter(p => {
     const name = `${p.fname} ${p.lname} ${p.id} ${p.contact}`.toLowerCase();
     if (search && !name.includes(search)) return false;
-    if (dept && p.dept !== dept) return false;
+    if (dept && p.department !== dept) return false;
     if (status && p.status !== status) return false;
-    if (activeFilter !== 'all' && p.type !== activeFilter && p.status !== activeFilter) return false;
-    
-    // Advanced filters
     const age = parseInt(p.age) || 0;
     if (age < minAge || age > maxAge) return false;
-    
-    const notes = (p.notes || '').toLowerCase();
-    if (place && !notes.includes(place)) return false;
-    if (doctor && !notes.includes(doctor)) return false;
-    if (op && !notes.includes(op)) return false;
-
     return true;
   });
   if (sortCol) {
@@ -190,9 +169,7 @@ function updatePagination() {
   nums.innerHTML = '';
   let startPage = Math.max(1, currentPage - 2);
   let endPage = Math.min(pages, startPage + 4);
-  if (endPage - startPage < 4) {
-    startPage = Math.max(1, endPage - 4);
-  }
+  if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
   for (let i = startPage; i <= endPage; i++) {
     const btn = document.createElement('button');
     btn.className = 'page-num' + (i === currentPage ? ' active' : '');
@@ -209,7 +186,7 @@ function changePage(dir) {
 }
 
 function viewPatient(id) {
-  const p = allPatients.find(pt => pt.id === id);
+  const p = allPatients.find(pt => pt.id == id);
   if (!p) return;
   const titleEl = document.getElementById('viewPatientTitle');
   if (titleEl) titleEl.textContent = `${p.fname} ${p.lname}`;
@@ -221,17 +198,17 @@ function viewPatient(id) {
         <div class="mini-avatar" style="width:64px;height:64px;font-size:1.3rem;background:linear-gradient(135deg,var(--primary-light),#2DD4BF);color:#fff">${esc((p.fname||'U')[0])}${esc((p.lname||'')[0])}</div>
         <div>
           <h3 style="font-family:var(--font-head);font-size:1.3rem;font-weight:800">${esc(p.fname)} ${esc(p.lname)}</h3>
-          <p style="color:var(--on-surface-var);font-size:.85rem">${esc(p.id ? p.id.slice(0,8) : '--')} · ${esc(p.dept)}</p>
+          <p style="color:var(--on-surface-var);font-size:.85rem">#${esc(p.id)} · ${esc(p.department)}</p>
           <span class="badge-status ${p.status}" style="margin-top:8px">${esc(cap(p.status))}</span>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="form-group"><label>Age</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(p.age)} years</div></div>
-        <div class="form-group"><label>Blood Group</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(p.blood)}</div></div>
+        <div class="form-group"><label>Blood Group</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(p.blood_group)}</div></div>
         <div class="form-group"><label>Contact</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(p.contact)}</div></div>
         <div class="form-group"><label>Email</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(p.email)}</div></div>
-        <div class="form-group"><label>Admission Type</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(cap(p.type))}</div></div>
-        <div class="form-group"><label>Last Visit</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${formatDate(p.lastVisit)}</div></div>
+        <div class="form-group"><label>Type</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${esc(cap(p.patient_type))}</div></div>
+        <div class="form-group"><label>Last Visit</label><div style="padding:10px 14px;background:var(--surface-low);border-radius:var(--radius-md)">${formatDate(p.last_visit)}</div></div>
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
         <button class="btn-secondary" onclick="closeModal(null,'viewPatientModal')">Close</button>
@@ -242,20 +219,19 @@ function viewPatient(id) {
 }
 
 function editPatient(id) {
-  const p = allPatients.find(pt => pt.id === id);
+  const p = allPatients.find(pt => pt.id == id);
   if (!p) { toast('Patient not found', 'error'); return; }
   document.getElementById('editPatientId').value = id;
   document.getElementById('editPatientTitle').textContent = `Edit ${p.fname} ${p.lname}`;
   document.getElementById('editFirstName').value = p.fname || '';
   document.getElementById('editLastName').value = p.lname || '';
-  document.getElementById('editDob').value = p.dob || '';
+  document.getElementById('editDob').value = p.dob ? p.dob.slice(0,10) : '';
   document.getElementById('editContact').value = p.contact || '';
   document.getElementById('editEmail').value = p.email || '';
-  document.getElementById('editDept').value = p.dept || '';
-  document.getElementById('editType').value = p.type ? p.type.charAt(0).toUpperCase() + p.type.slice(1) : '';
-  document.getElementById('editBlood').value = p.blood || '';
-  document.getElementById('editStatus').value = p.status || 'stable';
-  document.getElementById('editNotes').value = p.notes || '';
+  document.getElementById('editDept').value = p.department || '';
+  document.getElementById('editType').value = p.patient_type ? cap(p.patient_type) : '';
+  document.getElementById('editBlood').value = p.blood_group || '';
+  document.getElementById('editStatus').value = p.status || 'Active';
   if (document.getElementById('editGender')) document.getElementById('editGender').value = p.gender || '';
   openModal('editPatientModal');
 }
@@ -268,60 +244,28 @@ async function submitEditPatient(e) {
     lname: sanitizeInput(document.getElementById('editLastName').value),
     contact: sanitizeInput(document.getElementById('editContact').value),
     email: sanitizeInput(document.getElementById('editEmail').value.trim()),
-    dept: document.getElementById('editDept').value,
-    type: document.getElementById('editType').value.toLowerCase(),
-    blood: document.getElementById('editBlood').value || 'Unknown',
+    department: document.getElementById('editDept').value,
+    patient_type: document.getElementById('editType').value.toLowerCase(),
+    blood_group: document.getElementById('editBlood').value || 'Unknown',
     dob: document.getElementById('editDob').value,
     gender: document.getElementById('editGender')?.value || '',
-    notes: sanitizeInput(document.getElementById('editNotes').value),
     status: document.getElementById('editStatus').value,
   };
   const errors = validatePatientInput(raw);
-  if (errors.length > 0) {
-    toast(errors.join('. '), 'error');
-    return;
-  }
+  if (errors.length > 0) { toast(errors.join('. '), 'error'); return; }
   const submitBtn = e.target.querySelector('button[type="submit"]');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Saving...';
   try {
-    await fs.updateDoc(fs.doc(db, 'patients', id), {
-      fname: raw.fname,
-      lname: raw.lname,
-      contact: raw.contact,
-      email: raw.email,
-      dept: raw.dept,
-      type: raw.type,
-      blood: raw.blood,
-      dob: raw.dob,
-      gender: raw.gender,
-      notes: raw.notes,
-      status: raw.status,
-      age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25 * 24 * 3600 * 1000)) : 0,
-      updatedAt: fs.serverTimestamp()
-    });
-    const idx = allPatients.findIndex(p => p.id === id);
+    const result = await window.API.updatePatient(id, raw);
+    const idx = allPatients.findIndex(p => p.id == id);
     if (idx !== -1) {
-      allPatients[idx] = {
-        ...allPatients[idx],
-        fname: raw.fname,
-        lname: raw.lname,
-        contact: raw.contact,
-        email: raw.email,
-        dept: raw.dept,
-        type: raw.type,
-        blood: raw.blood,
-        dob: raw.dob,
-        gender: raw.gender,
-        notes: raw.notes,
-        status: raw.status,
-        age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25 * 24 * 3600 * 1000)) : allPatients[idx].age
-      };
+      allPatients[idx] = result.data;
       window.allPatients = allPatients;
     }
     closeModal(null, 'editPatientModal');
     applyFilters();
-    toast(`Patient ${raw.fname} ${raw.lname} updated!`, 'success');
+    toast(`Patient updated!`, 'success');
   } catch (err) {
     toast('Failed to update: ' + err.message, 'error');
   }
@@ -332,10 +276,10 @@ async function submitEditPatient(e) {
 async function deletePatient(id) {
   if (!confirm('Remove this patient from the registry?')) return;
   try {
-    await fs.deleteDoc(fs.doc(db, 'patients', id));
-    allPatients = allPatients.filter(p => p.id !== id);
+    await window.API.deletePatient(id);
+    allPatients = allPatients.filter(p => p.id != id);
     window.allPatients = allPatients;
-    filteredPatients = filteredPatients.filter(p => p.id !== id);
+    filteredPatients = filteredPatients.filter(p => p.id != id);
     applyFilters();
     toast('Patient record removed', 'warning', 'delete');
   } catch (err) {
@@ -347,14 +291,14 @@ async function loadPatients() {
   const tbody = document.getElementById('patientTableBody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--on-surface-var)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px;color:var(--outline-var)">hourglass_empty</span>Loading patients...</td></tr>';
   try {
-    const constraints = [fs.orderBy('lastVisit', 'desc')];
-    const user = window.HMS ? window.HMS.getUser() : null;
-    if (user && user.role === 'Doctor') {
-      constraints.unshift(fs.where('doctorId', '==', user.uid));
-    }
-    const snap = await fs.getDocs(fs.query(fs.collection(db, 'patients'), ...constraints));
-    allPatients = [];
-    snap.forEach(d => allPatients.push({ id: d.id, ...d.data() }));
+    const result = await window.API.getPatients({ limit: 1000 });
+    allPatients = result.data.map(p => ({
+      ...p,
+      blood_group: p.blood_group || p.blood || 'Unknown',
+      department: p.department || p.dept || '',
+      patient_type: p.patient_type || p.type || 'Outpatient',
+      last_visit: p.last_visit || p.lastVisit || ''
+    }));
     window.allPatients = allPatients;
   } catch (e) {
     console.error('Failed to load patients:', e);
@@ -371,47 +315,19 @@ async function submitAddPatient(e) {
     lname: sanitizeInput(document.getElementById('pLastName').value),
     contact: sanitizeInput(document.getElementById('pContact').value),
     email: sanitizeInput(document.getElementById('pEmail').value.trim()),
-    dept: document.getElementById('pDept').value,
-    type: document.getElementById('pType').value.toLowerCase(),
-    blood: document.getElementById('pBlood').value || 'Unknown',
+    department: document.getElementById('pDept').value,
+    patient_type: document.getElementById('pType').value.toLowerCase(),
+    blood_group: document.getElementById('pBlood').value || 'Unknown',
     dob: document.getElementById('pDob').value,
   };
   const errors = validatePatientInput(raw);
-  if (errors.length > 0) {
-    toast(errors.join('. '), 'error');
-    return;
-  }
+  if (errors.length > 0) { toast(errors.join('. '), 'error'); return; }
   const submitBtn = e.target.querySelector('button[type="submit"]');
   submitBtn.disabled = true;
   submitBtn.textContent = 'Registering...';
   try {
-    const docRef = await fs.addDoc(fs.collection(db, 'patients'), {
-      fname: raw.fname,
-      lname: raw.lname,
-      contact: raw.contact,
-      email: raw.email,
-      dept: raw.dept,
-      type: raw.type,
-      blood: raw.blood,
-      lastVisit: new Date().toISOString().slice(0, 10),
-      status: 'stable',
-      age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25 * 24 * 3600 * 1000)) : 0,
-      createdAt: fs.serverTimestamp(),
-      updatedAt: fs.serverTimestamp()
-    });
-    const newP = {
-      id: docRef.id,
-      fname: raw.fname,
-      lname: raw.lname,
-      contact: raw.contact,
-      email: raw.email,
-      dept: raw.dept,
-      type: raw.type,
-      blood: raw.blood,
-      status: 'stable',
-      age: raw.dob ? Math.floor((new Date() - new Date(raw.dob)) / (365.25 * 24 * 3600 * 1000)) : 0,
-      lastVisit: new Date().toISOString().slice(0, 10),
-    };
+    const result = await window.API.createPatient(raw);
+    const newP = result.data;
     allPatients.unshift(newP);
     window.allPatients = allPatients;
     applyFilters();
@@ -426,7 +342,5 @@ async function submitAddPatient(e) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  db = window.firebaseDb;
-  fs = window.firebaseFS;
   loadPatients();
 });

@@ -5,7 +5,6 @@
 
 'use strict';
 
-/* --- Chart.js CDN Loader --- */
 function loadChartJS(callback) {
   if (window.Chart) { callback(); return; }
   const s = document.createElement('script');
@@ -17,10 +16,8 @@ function loadChartJS(callback) {
 let adminAdmissionsChartInstance = null;
 let adminStatusChartInstance = null;
 
-/* --- Initialize Admin Charts --- */
 function initAdminCharts(callback) {
   loadChartJS(() => {
-    // Admissions Trend Chart
     const admCtx = document.getElementById('adminAdmissionsChart');
     if (admCtx) {
       adminAdmissionsChartInstance = new Chart(admCtx, {
@@ -60,7 +57,6 @@ function initAdminCharts(callback) {
       });
     }
 
-    // Patient Status Donut Chart
     const donutCtx = document.getElementById('adminStatusChart');
     if (donutCtx) {
       adminStatusChartInstance = new Chart(donutCtx, {
@@ -86,24 +82,18 @@ function initAdminCharts(callback) {
         }
       });
     }
-
     if (typeof callback === 'function') callback();
   });
 }
 
-/* --- Admin Filters --- */
 function applyAdminFilter() {
   const startDate = document.getElementById('adminStartDate')?.value;
-  const startTime = document.getElementById('adminStartTime')?.value || '00:00';
   const endDate = document.getElementById('adminEndDate')?.value;
-  const endTime = document.getElementById('adminEndTime')?.value || '23:59';
-
   if (!startDate) {
     toast('Please select a start date to filter operations.', 'warning');
     return;
   }
-
-  toast('Filter applied. Connect to Firestore to load real data for this range.', 'info', 'filter_alt');
+  loadAdminStats(startDate, endDate);
 }
 
 function clearAdminFilter() {
@@ -115,20 +105,15 @@ function clearAdminFilter() {
   if (startT) startT.value = '';
   if (endD) endD.value = '';
   if (endT) endT.value = '';
-  
-  // Reset charts to default values
   if (adminAdmissionsChartInstance) {
     adminAdmissionsChartInstance.data.datasets[0].data = [0, 0, 0, 0, 0, 0, 0];
     adminAdmissionsChartInstance.data.datasets[1].data = [0, 0, 0, 0, 0, 0, 0];
     adminAdmissionsChartInstance.update();
   }
-
   if (adminStatusChartInstance) {
     adminStatusChartInstance.data.datasets[0].data = [0, 0, 0, 0];
     adminStatusChartInstance.update();
   }
-
-  // Reset counters
   document.querySelectorAll('.stat-value').forEach(el => {
     const target = parseInt(el.getAttribute('data-target') || '0', 10);
     if (el.textContent.includes('₹')) {
@@ -137,66 +122,75 @@ function clearAdminFilter() {
       el.textContent = target;
     }
   });
-
-  // Hide result badge
   const badge = document.getElementById('adminResultBadge');
   if (badge) badge.classList.remove('visible');
-
   toast('Global filter cleared. Showing all-time metrics.', 'info');
 }
 
-async function loadAdminStats() {
+async function loadAdminStats(dateFrom, dateTo) {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const [patSnap, apptSnap, rxSnap, labSnap] = await Promise.all([
-      fs.getDocs(fs.collection(window.firebaseDb, 'patients')),
-      fs.getDocs(fs.collection(window.firebaseDb, 'appointments')),
-      fs.getDocs(fs.collection(window.firebaseDb, 'prescriptions')),
-      fs.getDocs(fs.collection(window.firebaseDb, 'lab_orders'))
-    ]);
-    const totalPatients = patSnap.size;
-    const totalAppointments = apptSnap.size;
-    const totalPrescriptions = rxSnap.size;
-    const pendingLab = labSnap.docs.filter(d => d.data().status === 'ordered' || d.data().status === 'processing').length;
+    const params = {};
+    if (dateFrom && dateTo) { params.date_from = dateFrom; params.date_to = dateTo; }
+    const result = await window.API.getDashboardStats(params);
+    const stats = result.data;
 
-    // Update stat cards
-    const cards = {
-      'Total Patients': totalPatients,
-      'Pending Reports': pendingLab,
-      'Patients Today': totalAppointments
+    const cardMap = {
+      'Total Patients': stats.totalPatients,
+      'Total Appointments': stats.totalAppointments,
+      'Today Appointments': stats.todayAppointments,
+      'Total Staff': stats.totalStaff,
+      'Low Stock Items': stats.lowStockItems,
+      'Pending Lab Orders': stats.pendingLabOrders,
+      'Revenue': stats.totalRevenue,
+      'Pending Bills': stats.pendingBills
     };
-    document.querySelectorAll('.stat-card').forEach(card => {
+
+    document.querySelectorAll('.stat-card .stat-value').forEach(el => {
+      const card = el.closest('.stat-card');
+      if (!card) return;
       const label = card.querySelector('.stat-label')?.textContent?.trim();
-      const valEl = card.querySelector('.stat-value');
-      if (valEl && cards[label] !== undefined) valEl.textContent = cards[label];
+      if (label && cardMap[label] !== undefined) {
+        if (label === 'Revenue' || label.includes('₹')) {
+          el.textContent = '₹' + Number(cardMap[label]).toLocaleString('en-IN');
+        } else {
+          el.textContent = cardMap[label];
+        }
+      }
     });
 
-    // Update admin charts with real data
-    if (adminAdmissionsChartInstance) {
-      // Set weekly averages based on real data
-      const weekly = Math.round(totalAppointments / 7) || 1;
-      adminAdmissionsChartInstance.data.datasets[0].data = [weekly, weekly+1, weekly-1, weekly+2, weekly-1, weekly+3, weekly];
+    if (adminAdmissionsChartInstance && stats.revenueTrend && stats.revenueTrend.length) {
+      const days = stats.revenueTrend.map(r => {
+        const d = new Date(r.date);
+        return d.toLocaleDateString('en', { weekday: 'short' });
+      });
+      const values = stats.revenueTrend.map(r => r.total);
+      adminAdmissionsChartInstance.data.labels = days;
+      adminAdmissionsChartInstance.data.datasets[0].data = values;
       adminAdmissionsChartInstance.update();
     }
-    if (adminStatusChartInstance) {
-      const inPatient = apptSnap.docs.filter(d => d.data().status === 'in-progress' || d.data().status === 'checked-in').length;
-      const outPatient = apptSnap.docs.filter(d => d.data().status === 'completed').length;
-      adminStatusChartInstance.data.datasets[0].data = [inPatient || 1, outPatient || 1, totalPatients - inPatient - outPatient || 0, pendingLab || 0];
+
+    if (adminStatusChartInstance && stats.appointmentsByStatus) {
+      const statusCounts = { 'in-progress': 0, completed: 0, cancelled: 0, scheduled: 0 };
+      stats.appointmentsByStatus.forEach(s => {
+        if (statusCounts[s.status] !== undefined) statusCounts[s.status] = s.count;
+      });
+      adminStatusChartInstance.data.datasets[0].data = [
+        statusCounts['in-progress'] || 0,
+        statusCounts.completed || 0,
+        statusCounts.cancelled || 0,
+        statusCounts.scheduled || 0
+      ];
       adminStatusChartInstance.update();
     }
   } catch (e) {
-    addConsoleLog('WARN', 'Could not load admin stats: ' + e.message);
+    console.warn('Could not load admin stats:', e.message);
   }
 }
 
-/* --- DOMContentLoaded --- */
 document.addEventListener('DOMContentLoaded', () => {
   initAdminCharts(() => {
     const todayChip = document.querySelector(`#adminSmartFilter .sf-chip[onclick*="'today'"]`);
-    if (todayChip) {
-      sfChipSelect(todayChip, 'admin', 'today');
-    }
+    if (todayChip) sfChipSelect(todayChip, 'admin', 'today');
   });
   setTimeout(loadAdminStats, 500);
 });

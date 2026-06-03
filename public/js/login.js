@@ -21,7 +21,7 @@ document.getElementById('forgotPwLink')?.addEventListener('click', async (e) => 
     await window.sendFirebasePasswordReset(email);
     alert('Password reset email sent. Check your inbox (and spam folder).');
   } catch (err) {
-    alert(err.message || 'Failed to send reset email.');
+    alert(err.message || 'Failed to send reset email. Contact your administrator.');
   }
 });
 
@@ -46,12 +46,17 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
       userProfile = await auth.login(email, password);
     }
 
+    if (!userProfile.role) {
+      throw new Error('ACCESS_DENIED:Your account has no role assigned. Contact your administrator.');
+    }
+
     const sessionData = {
       uid: userProfile.uid,
       email: userProfile.email,
       name: userProfile.name || email.split('@')[0],
       title: userProfile.title || '',
-      role: userProfile.role || 'Staff',
+      role: userProfile.role,
+      token: (function() { try { return JSON.parse(sessionStorage.getItem('hms_session')).token; } catch { return null; } })(),
       redirect: auth.getRedirect(userProfile.role)
     };
     auth.setSession(sessionData);
@@ -72,14 +77,10 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
       form.style.animation = 'shake 0.4s ease';
       return;
     }
-    if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+    if (err.message && err.message.includes('Network error')) {
+      message = 'Cannot reach the server. Please ensure the backend is running.';
+    } else if (err.message && err.message.includes('Invalid email')) {
       message = 'Invalid email or password.';
-    } else if (err.code === 'auth/too-many-requests') {
-      message = 'Too many attempts. Account temporarily locked.';
-    } else if (err.code === 'auth/invalid-email') {
-      message = 'Please enter a valid email address.';
-    } else if (err.code === 'auth/network-request-failed') {
-      message = 'Network error. Check your connection.';
     } else {
       message = err.message || 'Login failed.';
     }

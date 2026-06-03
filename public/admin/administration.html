@@ -140,11 +140,11 @@
             <label>Role</label>
             <select id="roleFilter" onchange="filterStaffTable()">
               <option value="all">All Roles</option>
-              <option value="Doctor">Doctor</option>
-              <option value="Nurse">Nurse</option>
-              <option value="Pharmacist">Pharmacist</option>
-              <option value="Staff">Staff</option>
               <option value="Admin">Admin</option>
+              <option value="Doctor">Doctor</option>
+              <option value="Staff">Staff</option>
+              <option value="Pharmacist">Pharmacist</option>
+              <option value="Lab Tech">Lab Tech</option>
             </select>
           </div>
           <div class="filter-group">
@@ -332,11 +332,11 @@
         <div class="form-group">
           <label>Role</label>
           <select id="staffRole" required onchange="toggleSpecializationField()">
-            <option value="Doctor">Doctor</option>
-            <option value="Nurse">Nurse</option>
-            <option value="Pharmacist">Pharmacist</option>
-            <option value="Staff">Staff</option>
             <option value="Admin">Admin</option>
+            <option value="Doctor">Doctor</option>
+            <option value="Staff">Staff</option>
+            <option value="Pharmacist">Pharmacist</option>
+            <option value="Lab Tech">Lab Tech</option>
           </select>
         </div>
         <div class="form-group">
@@ -420,11 +420,11 @@
         <div class="form-group">
           <label>Role</label>
           <select id="editStaffRole" required onchange="toggleEditSpecializationField()">
-            <option value="Doctor">Doctor</option>
-            <option value="Nurse">Nurse</option>
-            <option value="Pharmacist">Pharmacist</option>
-            <option value="Staff">Staff</option>
             <option value="Admin">Admin</option>
+            <option value="Doctor">Doctor</option>
+            <option value="Staff">Staff</option>
+            <option value="Pharmacist">Pharmacist</option>
+            <option value="Lab Tech">Lab Tech</option>
           </select>
         </div>
         <div class="form-group">
@@ -560,7 +560,7 @@
     </div>
   </div>
 
-  <script type="module" src="../js/firebase-init.js"></script>
+  <script src="../js/firebase-init.js"></script>
   <script src="../js/auth-guard.js"></script>
   <script src="../js/role-nav.js"></script>
   <script src="../js/app.js"></script>

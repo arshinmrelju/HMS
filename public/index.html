@@ -92,6 +92,7 @@
       margin-bottom: 8px;
       line-height: 1.1;
       background: linear-gradient(135deg, #004d46 0%, #0d9488 50%, #2563eb 100%);
+      background-clip: text;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       filter: drop-shadow(0 2px 8px rgba(13, 148, 136, 0.05));
@@ -525,7 +526,7 @@
     </footer>
   </div>
 
-  <script type="module" src="js/firebase-init.js"></script>
+  <script src="js/firebase-init.js"></script>
   <script>
     (async () => {
       try { if (window._authReady) await window._authReady; } catch (_) {}

@@ -8,10 +8,10 @@
 let OPD_QUEUE = [];
 let filteredOpdQueue = null;
 
-/* --- Doctor Schedule (empty, to be loaded from Firestore) --- */
+/* --- Doctor Schedule (empty, to be loaded from API) --- */
 let DOCTOR_SCHEDULE = [];
 
-/* --- Bed Allocation Data by Ward (empty, to be loaded from Firestore) --- */
+/* --- Bed Allocation Data by Ward (empty, to be loaded from API) --- */
 let WARDS = {};
 
 let currentWard = 'general';
@@ -194,19 +194,23 @@ async function checkInPatient() {
     status: priority,
     type: 'OPD',
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: new Date().toISOString(),
-    createdAt: window.firebaseFS?.serverTimestamp?.() || new Date().toISOString()
+    timestamp: new Date().toISOString()
   };
   OPD_QUEUE.push(record);
 
-  // Persist to Firestore
+  // Persist via API
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs) {
-      await fs.addDoc(fs.collection(window.firebaseDb, 'appointments'), record);
-    }
+    await window.API.createAppointment({
+      patient_id: name,
+      doctor_id: doctor,
+      appointment_date: new Date().toISOString().split('T')[0],
+      appointment_time: record.time,
+      type: 'OPD',
+      status: priority,
+      reason: complaint
+    });
   } catch (e) {
-    addConsoleLog('WARN', 'Could not save check-in to Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Could not save check-in: ' + e.message);
   }
 
   renderOpdQueue();
@@ -232,22 +236,19 @@ async function bookAppointment(e) {
 
   if (!patient) { toast('Please enter patient name.', 'warning'); return; }
 
-  // Persist to Firestore
+  // Persist via API
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs) {
-      await fs.addDoc(fs.collection(window.firebaseDb, 'appointments'), {
-        patientName: patient,
-        doctor,
-        date: date || new Date().toISOString().split('T')[0],
-        time: time || '—',
-        type: type || 'Check-up',
-        status: 'scheduled',
-        createdAt: fs.serverTimestamp?.() || new Date().toISOString()
-      });
-    }
+    await window.API.createAppointment({
+      patient_id: patient,
+      doctor_id: doctor,
+      appointment_date: date || new Date().toISOString().split('T')[0],
+      appointment_time: time || '—',
+      type: type || 'Check-up',
+      status: 'scheduled',
+      reason: ''
+    });
   } catch (e) {
-    addConsoleLog('WARN', 'Could not save appointment to Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Could not save appointment: ' + e.message);
   }
 
   toast(`Appointment confirmed! ${patient} → ${doctor} on ${date || 'Today'} at ${time}`, 'success', 'event_available');
@@ -280,53 +281,50 @@ const s = document.createElement('style');
 s.textContent = wardBtnStyle;
 document.head.appendChild(s);
 
-/* --- Firestore Data Loaders --- */
+/* --- API Data Loaders --- */
 async function loadOpdQueueFromFirestore() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'appointments'), fs.where('type', '==', 'OPD'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
-    const snap = await fs.getDocs(q);
-    if (snap.empty) return;
-    OPD_QUEUE = snap.docs.map((d, i) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        token: data.token || i + 1,
-        name: data.patientName || 'Unknown',
-        age: data.patientAge || 'N/A',
-        doctor: data.doctor || 'Unassigned',
-        complaint: data.complaint || '—',
-        status: data.status || 'waiting',
-        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
-        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString()
-      };
-    });
+    const response = await window.API.getAppointments({ limit: 50 });
+    if (!response.success) return;
+    const appointments = response.data || [];
+    OPD_QUEUE = appointments
+      .filter(a => a.type === 'OPD')
+      .map((a, i) => {
+        const token = a.token || a.id || i + 1;
+        return {
+          id: a.id || token,
+          token,
+          name: a.patientName || a.patient_id || 'Unknown',
+          age: a.patientAge || a.age || 'N/A',
+          doctor: a.doctor || a.doctor_id || 'Unassigned',
+          complaint: a.reason || a.complaint || '—',
+          status: a.status || 'waiting',
+          time: a.appointment_time || a.time || '—',
+          timestamp: a.createdAt || a.appointment_date || new Date().toISOString()
+        };
+      });
   } catch (e) {
-    addConsoleLog('WARN', 'Could not load OPD queue from Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Could not load OPD queue: ' + e.message);
   }
 }
 
 async function loadDoctorScheduleFromFirestore() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const snap = await fs.getDocs(fs.collection(window.firebaseDb, 'staff_schedules'));
-    if (snap.empty) return;
-    DOCTOR_SCHEDULE = [];
-    snap.forEach(d => {
-      const data = d.data();
-      const name = data.name || d.id;
+    const response = await window.API.getSchedules();
+    if (!response.success) return;
+    const schedules = response.data || [];
+    DOCTOR_SCHEDULE = schedules.map(s => {
+      const name = s.name || s.doctor_name || 'Unknown';
       const parts = name.split(' ');
-      DOCTOR_SCHEDULE.push({
+      return {
         initials: parts.map(n => n[0]).join('').toUpperCase().slice(0, 2),
         name,
-        dept: data.dept || data.department || 'General',
-        slots: (data.slots || data.shifts || []).map(s => ({
-          time: s.time || s,
-          type: s.type || 'morning'
+        dept: s.dept || s.department || 'General',
+        slots: (s.slots || s.shifts || []).map(slot => ({
+          time: slot.time || slot,
+          type: slot.type || 'morning'
         }))
-      });
+      };
     });
   } catch (e) {
     addConsoleLog('WARN', 'Could not load doctor schedule: ' + e.message);

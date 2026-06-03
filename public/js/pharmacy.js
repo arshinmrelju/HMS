@@ -2,13 +2,15 @@
 HMS.requireAuth();
 
 let MEDICINES = [];
-let MEDICINES_MAP = {}; // name -> Firestore doc ID lookup
+let MEDICINES_MAP = {};
 
 const REQUISITIONS = [];
 const NOTIFICATIONS = [];
 
 let _invLoaded = false, _patCursor = null, _patComplete = false;
 const PAT_PAGE_SIZE = 100;
+let _invPage = 1;
+let _invComplete = false;
 
 function saveInventory() {
   try { localStorage.setItem('hms_inventory', JSON.stringify(MEDICINES)); } catch(e) { /* quota errors */ }
@@ -113,45 +115,36 @@ async function ensureAllInventory() {
     return _allInventory;
   }
   _allInventoryLoading = true;
-  const fs = window.firebaseDb && window.firebaseFS;
-  if (!fs) { _allInventory = []; _allInventoryLoading = false; return []; }
   const items = [];
-  let cursor = null;
+  let page = 1;
   try {
     while (true) {
-      let q;
-      const base = fs.collection(window.firebaseDb, 'inventory');
-      if (cursor) {
-        q = fs.query(base, fs.orderBy('__name__'), fs.startAfter(cursor), fs.limit(1000));
-      } else {
-        q = fs.query(base, fs.orderBy('__name__'), fs.limit(1000));
-      }
-      const snap = await fs.getDocs(q);
-      if (snap.empty) break;
-      snap.forEach(d => {
-        const data = d.data();
-        const batches = data.batches && data.batches.length > 0 ? data.batches : [{ batchNo: data.batchNo || 'LEGACY', stock: data.stock || 0, expiry: data.expiry || 'N/A', mrp: data.price || data.mrp || 0 }];
+      const resp = await window.API.getInventory({ page, limit: 1000 });
+      if (!resp.success || !resp.data || resp.data.length === 0) break;
+      resp.data.forEach(d => {
+        const batches = d.batches && d.batches.length > 0 ? d.batches : [{ batchNo: d.batch_no || 'LEGACY', stock: d.quantity || 0, expiry: d.expiry_date || 'N/A', mrp: d.mrp || d.selling_price || 0 }];
         const totalStock = batches.reduce((s, b) => s + (b.stock || 0), 0);
         const earliestBatch = batches.reduce((earliest, b) => (!earliest || (b.expiry && b.expiry < earliest.expiry) ? b : earliest), null);
         items.push({
           id: d.id,
-          name: data.name || data.brandName || '',
-          cat: data.cat || data.category || '',
+          name: d.brand_name || d.name || '',
+          cat: d.category || d.cat || '',
           stock: totalStock,
-          price: data.price || data.mrp || 0,
-          expiry: earliestBatch ? earliestBatch.expiry : (data.expiry || 'N/A'),
-          rack: data.rack || '',
+          price: d.selling_price || d.mrp || 0,
+          expiry: earliestBatch ? earliestBatch.expiry : (d.expiry_date || 'N/A'),
+          rack: d.rack || '',
           batches: batches,
-          safetyStock: data.safetyStock || 30,
-          leadTime: data.leadTime || 3,
-          adu: data.adu || 10,
-          reorderPoint: data.reorderPoint || 0,
-          reorderQty: data.reorderQty || 100,
-          status: data.status || (totalStock === 0 ? 'out' : totalStock <= data.reorderPoint ? 'low' : 'in-stock')
+          safetyStock: d.safety_stock || d.safetyStock || 30,
+          leadTime: d.lead_time || d.leadTime || 3,
+          adu: d.adu || 10,
+          reorderPoint: d.reorder_level || d.reorderPoint || 0,
+          reorderQty: d.reorder_qty || d.reorderQty || 100,
+          status: d.status || (totalStock === 0 ? 'out' : totalStock <= (d.reorder_level || 0) ? 'low' : 'in-stock')
         });
       });
-      cursor = snap.docs[snap.docs.length - 1];
-      if (snap.docs.length < 1000) break;
+      page++;
+      if (resp.pagination && page > resp.pagination.totalPages) break;
+      if (resp.data.length < 1000) break;
     }
   } catch (e) { /* if full load fails, return what we have */ }
   _allInventory = items;
@@ -265,7 +258,7 @@ function filterBill(btn, f) {
 async function markPaid(inv) {
   const i = INVOICES.find(x => x.inv === inv);
   if (i) { i.status = 'paid'; renderBillTable();
-    try { const fs = window.firebaseDb && window.firebaseFS; if (fs && i._docId) await fs.updateDoc(fs.doc(window.firebaseDb, 'transactions', i._docId), { status: 'paid' }); } catch (e) { /* ignore */ }
+    try { if (i._docId) await window.API.updateTransaction(i._docId, { status: 'paid' }); } catch (e) { /* ignore */ }
     toast(`${inv} marked as paid!`, 'success'); }
 }
 
@@ -332,11 +325,20 @@ async function submitAddMed(e) {
     status: batchStock === 0 ? 'out' : batchStock <= reorderPoint ? 'low' : 'in-stock'
   };
 
-  // Persist to Firestore
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'inventory'), m);
-  } catch (e) { addConsoleLog('WARN', 'Failed to save med to Firestore: ' + e.message); }
+    const resp = await window.API.addInventoryItem({
+      brand_name: name,
+      category: m.cat,
+      quantity: batchStock,
+      selling_price: batchMrp,
+      mrp: batchMrp,
+      expiry_date: batchExpiry,
+      reorder_level: reorderPoint
+    });
+    if (resp.success && resp.data) {
+      m.id = resp.data.id || resp.data._id;
+    }
+  } catch (e) { addConsoleLog('WARN', 'Failed to save med: ' + e.message); }
 
   MEDICINES.unshift(m);
   saveInventory();
@@ -413,7 +415,6 @@ async function submitEditMed(e) {
   m.adu = parseInt(document.getElementById('editAdu').value) || 10;
   m.reorderQty = parseInt(document.getElementById('editReorderQty').value) || 100;
   m.reorderPoint = (m.adu * m.leadTime) + m.safetyStock;
-  // Read batches from form
   const batchRows = document.querySelectorAll('#editBatchesList .edit-batch-row');
   m.batches = Array.from(batchRows).map(r => ({
     batchNo: r.querySelector('.edit-batch-no').value.trim(),
@@ -425,13 +426,19 @@ async function submitEditMed(e) {
   m.price = m.batches.length > 0 ? m.batches[0].mrp : 0;
   m.expiry = m.batches.reduce((earliest, b) => (!earliest || (b.expiry && b.expiry < earliest.expiry) ? b : earliest), null)?.expiry || 'N/A';
   m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
-  // Persist to Firestore
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs && m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), {
-      cat: m.cat, rack: m.rack, stock: m.stock, price: m.price, expiry: m.expiry,
-      batches: m.batches, safetyStock: m.safetyStock, leadTime: m.leadTime, adu: m.adu,
-      reorderQty: m.reorderQty, reorderPoint: m.reorderPoint, status: m.status
+    if (m.id) await window.API.updateInventoryItem(m.id, {
+      category: m.cat,
+      quantity: m.stock,
+      selling_price: m.price,
+      mrp: m.price,
+      expiry_date: m.expiry,
+      reorder_level: m.reorderPoint,
+      safety_stock: m.safetyStock,
+      lead_time: m.leadTime,
+      reorder_qty: m.reorderQty,
+      adu: m.adu,
+      status: m.status
     });
   } catch (e) { addConsoleLog('WARN', 'Failed to save medicine edit: ' + e.message); }
   renderMedTable();
@@ -492,13 +499,15 @@ async function submitBill(e) {
   e.preventDefault();
   const patient = document.getElementById('billPatient').value;
   const amount = parseFloat(document.getElementById('billTotalAmt').textContent) || 0;
-  const fs = window.firebaseDb && window.firebaseFS;
   let docRef;
   try {
-    if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'transactions'), {
-      patientName: patient, amount, items: document.querySelectorAll('.bill-item-row').length + 1,
-      status: 'unpaid', createdAt: fs.serverTimestamp?.() || new Date().toISOString()
+    const resp = await window.API.createTransaction({
+      patientName: patient,
+      amount,
+      items: document.querySelectorAll('.bill-item-row').length + 1,
+      status: 'unpaid'
     });
+    if (resp.success) docRef = resp.data;
   } catch (e) { addConsoleLog('WARN', 'Failed to save invoice: ' + e.message); }
   const docId = docRef?.id;
   const newInv = { _docId: docId, inv: docId ? docId.slice(0, 8).toUpperCase() : `INV-${String(INVOICES.length+1).padStart(3,'0')}`, patient, date: new Date().toISOString().slice(0,10), items: document.querySelectorAll('.bill-item-row').length+1, amount, status:'unpaid' };
@@ -548,10 +557,8 @@ function initPatientAutocomplete() {
   window.selectBillPatient = function(val) { input.value = val; dropdown.classList.remove('active'); };
 }
 
-/* --- Firestore loaders --- */
+/* --- API loaders --- */
 const INV_PAGE_SIZE = 100;
-let _invCursor = null;
-let _invComplete = false;
 
 function updateLoadMoreBtn() {
   const cont = document.getElementById('loadMoreInvContainer');
@@ -562,13 +569,9 @@ function updateLoadMoreBtn() {
 async function loadInventoryFromFirestore(reset = true) {
   if (_invComplete) return;
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    if (reset) { MEDICINES = []; MEDICINES_MAP = {}; _invCursor = null; _invComplete = false; }
-    let q = fs.query(fs.collection(window.firebaseDb, 'inventory'), fs.orderBy('__name__'), fs.limit(INV_PAGE_SIZE));
-    if (_invCursor) q = fs.query(fs.collection(window.firebaseDb, 'inventory'), fs.orderBy('__name__'), fs.startAfter(_invCursor), fs.limit(INV_PAGE_SIZE));
-    const snap = await fs.getDocs(q);
-    if (snap.empty) {
+    if (reset) { MEDICINES = []; MEDICINES_MAP = {}; _invPage = 1; _invComplete = false; }
+    const resp = await window.API.getInventory({ page: _invPage, limit: INV_PAGE_SIZE });
+    if (!resp.success) {
       if (reset && MEDICINES.length === 0) {
         const raw = localStorage.getItem('hms_inventory');
         if (raw) { try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) MEDICINES = parsed; } catch(_) {} }
@@ -577,32 +580,42 @@ async function loadInventoryFromFirestore(reset = true) {
       updateLoadMoreBtn();
       return;
     }
-    snap.forEach(d => {
-      const data = d.data();
-      const batches = data.batches && data.batches.length > 0 ? data.batches : [{ batchNo: data.batchNo || 'LEGACY', stock: data.stock || 0, expiry: data.expiry || 'N/A', mrp: data.price || data.mrp || 0 }];
+    const items = resp.data || [];
+    if (items.length === 0) {
+      if (reset && MEDICINES.length === 0) {
+        const raw = localStorage.getItem('hms_inventory');
+        if (raw) { try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) MEDICINES = parsed; } catch(_) {} }
+      }
+      _invComplete = true;
+      updateLoadMoreBtn();
+      return;
+    }
+    items.forEach(d => {
+      const batches = d.batches && d.batches.length > 0 ? d.batches : [{ batchNo: d.batch_no || 'LEGACY', stock: d.quantity || 0, expiry: d.expiry_date || 'N/A', mrp: d.mrp || d.selling_price || 0 }];
       const totalStock = batches.reduce((s, b) => s + (b.stock || 0), 0);
       const earliestBatch = batches.reduce((earliest, b) => (!earliest || (b.expiry && b.expiry < earliest.expiry) ? b : earliest), null);
       const item = {
         id: d.id,
-        name: data.name || data.brandName || '',
-        cat: data.cat || data.category || '',
+        name: d.brand_name || d.name || '',
+        cat: d.category || d.cat || '',
         stock: totalStock,
-        price: data.price || data.mrp || 0,
-        expiry: earliestBatch ? earliestBatch.expiry : (data.expiry || 'N/A'),
-        rack: data.rack || '',
+        price: d.selling_price || d.mrp || 0,
+        expiry: earliestBatch ? earliestBatch.expiry : (d.expiry_date || 'N/A'),
+        rack: d.rack || '',
         batches: batches,
-        safetyStock: data.safetyStock || 30,
-        leadTime: data.leadTime || 3,
-        adu: data.adu || 10,
-        reorderPoint: data.reorderPoint || 0,
-        reorderQty: data.reorderQty || 100,
-        status: data.status || (totalStock === 0 ? 'out' : totalStock <= data.reorderPoint ? 'low' : 'in-stock')
+        safetyStock: d.safety_stock || d.safetyStock || 30,
+        leadTime: d.lead_time || d.leadTime || 3,
+        adu: d.adu || 10,
+        reorderPoint: d.reorder_level || d.reorderPoint || 0,
+        reorderQty: d.reorder_qty || d.reorderQty || 100,
+        status: d.status || (totalStock === 0 ? 'out' : totalStock <= (d.reorder_level || 0) ? 'low' : 'in-stock')
       };
       MEDICINES.push(item);
       MEDICINES_MAP[item.name.toLowerCase()] = d.id;
     });
-    _invCursor = snap.docs[snap.docs.length - 1];
-    if (snap.docs.length < INV_PAGE_SIZE) _invComplete = true;
+    _invPage++;
+    if (resp.pagination && _invPage > resp.pagination.totalPages) _invComplete = true;
+    if (items.length < INV_PAGE_SIZE) _invComplete = true;
     try { localStorage.setItem('hms_inventory', JSON.stringify(MEDICINES)); } catch(_) {}
     _invLoaded = true;
     updateLoadMoreBtn();
@@ -618,7 +631,7 @@ async function loadInventoryFromFirestore(reset = true) {
 }
 
 async function loadMoreInventory() {
-  if (_invComplete || !_invCursor) { updateLoadMoreBtn(); return; }
+  if (_invComplete) { updateLoadMoreBtn(); return; }
   await loadInventoryFromFirestore(false);
   renderMedTable();
   if (typeof renderRopConfigTable === 'function') { renderRopConfigTable(); populateSimMedSelect(); }
@@ -626,32 +639,9 @@ async function loadMoreInventory() {
 }
 
 async function loadPatientsForPharmacy(reset = true) {
-  try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    if (window.allPatients && window.allPatients.length > 0) {
-      PATIENTS_DB.length = 0;
-      PATIENTS_DB.push(...window.allPatients);
-      return;
-    }
-    if (reset) { PATIENTS_DB.length = 0; _patCursor = null; _patComplete = false; }
-    if (_patComplete) return;
-    let q = fs.query(fs.collection(window.firebaseDb, 'patients'), fs.orderBy('name'), fs.limit(PAT_PAGE_SIZE));
-    if (_patCursor) q = fs.query(fs.collection(window.firebaseDb, 'patients'), fs.orderBy('name'), fs.startAfter(_patCursor), fs.limit(PAT_PAGE_SIZE));
-    const snap = await fs.getDocs(q);
-    if (!snap.empty) {
-      snap.forEach(d => {
-        const data = d.data();
-        PATIENTS_DB.push({
-          name: data.name || data.patientName || 'Unknown',
-          phone: data.phone || data.contact || data.mobile || ''
-        });
-      });
-      _patCursor = snap.docs[snap.docs.length - 1];
-    }
-    if (snap.empty || snap.docs.length < PAT_PAGE_SIZE) _patComplete = true;
-  } catch (e) {
-    addConsoleLog('WARN', 'Could not load patients: ' + e.message);
+  if (window.allPatients && window.allPatients.length > 0) {
+    PATIENTS_DB.length = 0;
+    PATIENTS_DB.push(...window.allPatients);
   }
 }
 
@@ -663,12 +653,10 @@ async function loadMorePatients() {
 
 async function loadRequisitionsFromFirestore() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const snap = await fs.getDocs(fs.query(fs.collection(window.firebaseDb, 'purchase_requisitions'), fs.orderBy('createdAt', 'desc'), fs.limit(50)));
-    snap.forEach(d => {
-      const data = d.data();
-      REQUISITIONS.push({ id: d.id, name: data.name, qty: data.qty, date: data.date, status: data.status });
+    const resp = await window.API.getRequisitions();
+    if (!resp.success) return;
+    (resp.data || []).forEach(d => {
+      REQUISITIONS.push({ id: d.id, name: d.item_name || d.name, qty: d.quantity_needed || d.qty, date: d.date || d.createdAt, status: d.status });
     });
   } catch (e) {
     addConsoleLog('WARN', 'Could not load requisitions: ' + e.message);
@@ -676,34 +664,20 @@ async function loadRequisitionsFromFirestore() {
 }
 
 async function loadNotificationsFromFirestore() {
-  try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const snap = await fs.getDocs(fs.query(fs.collection(window.firebaseDb, 'notifications'), fs.orderBy('createdAt', 'desc'), fs.limit(50)));
-    snap.forEach(d => {
-      const data = d.data();
-      NOTIFICATIONS.push({ time: data.time, message: data.message, type: data.type });
-    });
-  } catch (e) {
-    addConsoleLog('WARN', 'Could not load notifications: ' + e.message);
-  }
 }
 
 async function loadPrescriptionsFromFirestore() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'prescriptions'), fs.orderBy('createdAt', 'desc'), fs.limit(20));
-    const snap = await fs.getDocs(q);
-    snap.forEach(d => {
-      const data = d.data();
-      (data.medications || data.meds || []).forEach(med => {
+    const resp = await window.API.getPharmacyPrescriptions();
+    if (!resp.success) return;
+    (resp.data || []).forEach(d => {
+      (d.medications || d.meds || []).forEach(med => {
         PRESCRIPTIONS.push({
-          patient: data.patientName || data.patient || 'Unknown',
+          patient: d.patientName || d.patient || 'Unknown',
           drug: typeof med === 'string' ? med : med.name || med.med || '—',
           qty: typeof med === 'string' ? '—' : med.qty || med.dosage || '—',
-          doctor: data.doctor || '—',
-          issued: data.createdAt?.toDate?.()?.toLocaleDateString?.() || data.time || '—'
+          doctor: d.doctor || '—',
+          issued: d.createdAt || d.time || '—'
         });
       });
     });
@@ -713,26 +687,6 @@ async function loadPrescriptionsFromFirestore() {
 }
 
 async function loadInvoicesFromFirestore() {
-  try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'transactions'), fs.orderBy('createdAt', 'desc'), fs.limit(20));
-    const snap = await fs.getDocs(q);
-    snap.forEach(d => {
-      const data = d.data();
-      INVOICES.push({
-        _docId: d.id,
-        inv: d.id.slice(0, 8).toUpperCase(),
-        patient: data.patientName || data.patient || 'Unknown',
-        date: data.createdAt?.toDate?.()?.toLocaleDateString?.() || new Date().toISOString().slice(0, 10),
-        items: data.items || 0,
-        amount: data.amount || 0,
-        status: data.status || 'unpaid'
-      });
-    });
-  } catch (e) {
-    addConsoleLog('WARN', 'Could not load invoices: ' + e.message);
-  }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -870,12 +824,14 @@ async function submitRopConfig(e) {
   m.reorderQty = parseInt(document.getElementById('ropConfigReorderQty')?.value) || 100;
   m.reorderPoint = (m.adu * m.leadTime) + m.safetyStock;
   m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
-  // Persist to Firestore
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs && m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), {
-      safetyStock: m.safetyStock, leadTime: m.leadTime, adu: m.adu,
-      reorderQty: m.reorderQty, reorderPoint: m.reorderPoint, status: m.status
+    if (m.id) await window.API.updateInventoryItem(m.id, {
+      reorder_level: m.reorderPoint,
+      safety_stock: m.safetyStock,
+      lead_time: m.leadTime,
+      reorder_qty: m.reorderQty,
+      adu: m.adu,
+      status: m.status
     });
   } catch (e) { addConsoleLog('WARN', 'Failed to save ROP config: ' + e.message); }
   renderMedTable();
@@ -892,14 +848,14 @@ async function checkAndTriggerRop(m) {
     if (!activePr) {
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const fs = window.firebaseDb && window.firebaseFS;
-      const prData = { name: m.name, qty: m.reorderQty, date: now.toISOString().slice(0, 10), status: 'pending', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
-      const notifData = { time: timeStr, message: `Automated PR generated for ${m.name} (Stock: ${m.stock} units, ROP: ${m.reorderPoint} units).`, type: m.stock <= m.safetyStock ? 'error' : 'warning', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
-      let prRef, notifRef;
+      const prData = { inventory_id: m.id, item_name: m.name, quantity_needed: m.reorderQty, notes: `Auto-PR: Stock ${m.stock}, ROP ${m.reorderPoint}` };
+      const notifData = { time: timeStr, message: `Automated PR generated for ${m.name} (Stock: ${m.stock} units, ROP: ${m.reorderPoint} units).`, type: m.stock <= m.safetyStock ? 'error' : 'warning' };
       try {
-        if (fs) { prRef = await fs.addDoc(fs.collection(window.firebaseDb, 'purchase_requisitions'), prData); notifRef = await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); }
+        const resp = await window.API.createRequisition(prData);
+        if (resp.success) {
+          REQUISITIONS.unshift({ id: resp.data.id || `PR-${Date.now()}`, name: m.name, qty: m.reorderQty, date: now.toISOString().slice(0, 10), status: 'pending' });
+        }
       } catch (e) { addConsoleLog('WARN', 'Failed to persist ROP trigger: ' + e.message); }
-      REQUISITIONS.unshift({ id: prRef?.id || `PR-${Date.now()}`, ...prData });
       NOTIFICATIONS.unshift(notifData);
       renderPrTable();
       renderRopNotifList();
@@ -916,7 +872,6 @@ async function runDispenseSimulation(e) {
   if (!m) return;
   if (m.stock < qty) { toast(`Cannot dispense ${qty} units. Only ${m.stock} available.`, 'error'); return; }
   m.stock -= qty;
-  // Decrement from first batch with enough stock
   if (m.batches && m.batches.length > 0) {
     let remaining = qty;
     for (const b of m.batches) {
@@ -929,16 +884,12 @@ async function runDispenseSimulation(e) {
     if (m.batches.length === 0) { m.batches = [{ batchNo: 'ADJUSTED', stock: 0, expiry: m.expiry || 'N/A', mrp: m.price || 0 }]; }
   }
   m.status = m.stock === 0 ? 'out' : m.stock <= m.reorderPoint ? 'low' : 'in-stock';
-  // Persist stock change to Firestore
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs && m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), { stock: m.stock, status: m.status, batches: m.batches });
+    if (m.id) await window.API.updateInventoryItem(m.id, { quantity: m.stock, status: m.status });
   } catch (e) { addConsoleLog('WARN', 'Failed to sync stock: ' + e.message); }
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fs = window.firebaseDb && window.firebaseFS;
-  const notifData = { time: timeStr, message: `Simulation: Dispensed ${qty} units of ${m.name}. Stock reduced to ${m.stock} units.`, type: 'info', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
-  try { if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); } catch (_) {}
+  const notifData = { time: timeStr, message: `Simulation: Dispensed ${qty} units of ${m.name}. Stock reduced to ${m.stock} units.`, type: 'info' };
   NOTIFICATIONS.unshift(notifData);
   toast(`Dispensed ${qty} units of ${m.name}`, 'info');
   renderMedTable();
@@ -965,10 +916,10 @@ async function approveRopPR(prId) {
   toast(`Requisition ${prId} approved.`, 'success');
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fs = window.firebaseDb && window.firebaseFS;
-  try { if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'purchase_requisitions', prId), { status: 'ordered' }); } catch (e) { addConsoleLog('WARN', 'Failed to update PR: ' + e.message); }
-  const notifData = { time: timeStr, message: `Purchase Requisition ${prId} approved.`, type: 'info', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
-  try { if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); } catch (_) {}
+  try {
+    await window.API.approveRequisition(prId);
+  } catch (e) { addConsoleLog('WARN', 'Failed to update PR: ' + e.message); }
+  const notifData = { time: timeStr, message: `Purchase Requisition ${prId} approved.`, type: 'info' };
   NOTIFICATIONS.unshift(notifData);
   renderRopNotifList();
 }
@@ -979,7 +930,6 @@ async function receiveRopStock(prId) {
   const m = MEDICINES.find(x => x.name === r.name);
   if (!m) return;
   m.stock += r.qty;
-  // Add to first existing batch or create a new batch entry
   if (m.batches && m.batches.length > 0) {
     m.batches[0].stock += r.qty;
   } else {
@@ -989,16 +939,11 @@ async function receiveRopStock(prId) {
   r.status = 'received';
   const now = new Date();
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const fs = window.firebaseDb && window.firebaseFS;
-  // Persist to Firestore
   try {
-    if (fs) {
-      if (m.id) await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', m.id), { stock: m.stock, status: m.status, batches: m.batches });
-      await fs.updateDoc(fs.doc(window.firebaseDb, 'purchase_requisitions', prId), { status: 'received' });
-    }
+    if (m.id) await window.API.updateInventoryItem(m.id, { quantity: m.stock, status: m.status });
+    await window.API.receiveRequisition(prId);
   } catch (e) { addConsoleLog('WARN', 'Failed to sync stock/PR: ' + e.message); }
-  const notifData = { time: timeStr, message: `Received ${r.qty} units of ${m.name}. Stock level restored to ${m.stock} units.`, type: 'success', createdAt: fs?.serverTimestamp?.() || now.toISOString() };
-  try { if (fs) await fs.addDoc(fs.collection(window.firebaseDb, 'notifications'), notifData); } catch (_) {}
+  const notifData = { time: timeStr, message: `Received ${r.qty} units of ${m.name}. Stock level restored to ${m.stock} units.`, type: 'success' };
   NOTIFICATIONS.unshift(notifData);
   renderMedTable();
   renderRopConfigTable();
@@ -1011,7 +956,6 @@ async function receiveRopStock(prId) {
 
 async function clearRopNotifs() {
   NOTIFICATIONS.length = 0; renderRopNotifList();
-  try { const fs = window.firebaseDb && window.firebaseFS; if (fs) { const snap = await fs.getDocs(fs.collection(window.firebaseDb, 'notifications')); const batch = []; snap.forEach(d => batch.push(fs.deleteDoc(d.ref))); await Promise.all(batch); } } catch (_) {}
   toast('Alert log cleared.', 'info');
 }
 

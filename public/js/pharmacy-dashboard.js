@@ -80,7 +80,6 @@ function filterRxQueue() {
 
   renderRxQueue();
 
-  // Show result badge
   const badge = document.getElementById('rxResultBadge');
   if (badge) badge.classList.add('visible');
 
@@ -95,7 +94,6 @@ function clearRxQueueFilter() {
   filteredRxQueue = null;
   renderRxQueue();
 
-  // Hide result badge
   const badge = document.getElementById('rxResultBadge');
   if (badge) badge.classList.remove('visible');
 
@@ -108,7 +106,6 @@ function selectRx(id) {
   const rx = RX_QUEUE.find(r => r.id === id);
   if (!rx) return;
 
-  // Update header
   const nameEl = document.getElementById('activeRxPatientName');
   if (nameEl) nameEl.textContent = `${rx.patient} · ${rx.id}`;
 
@@ -152,7 +149,6 @@ function selectRx(id) {
     `;
   }
 
-  // Re-render queue highlights
   document.querySelectorAll('.rx-card').forEach(card => {
     card.classList.toggle('active', card.id === `rxCard-${id}`);
   });
@@ -166,8 +162,7 @@ async function markDispensed(id) {
     renderRxQueue();
     selectRx(id);
     try {
-      const fs = window.firebaseDb && window.firebaseFS;
-      if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'prescriptions', id), { status: 'dispensing' });
+      await window.API.fillPrescription(id);
     } catch (e) { addConsoleLog('WARN', 'Failed to update Rx status: ' + e.message); }
     toast(`${rx.patient}'s prescription marked as dispensing!`, 'success');
   }
@@ -178,23 +173,19 @@ async function dispenseAndBill(id) {
   if (rx) {
     rx.status = 'ready';
     try {
-      const fs = window.firebaseDb && window.firebaseFS;
-      if (fs) await fs.updateDoc(fs.doc(window.firebaseDb, 'prescriptions', id), { status: 'ready' });
+      await window.API.fillPrescription(id);
     } catch (e) { addConsoleLog('WARN', 'Failed to update Rx status: ' + e.message); }
-    // Auto-fill invoice
     const invPatient = document.getElementById('invoicePatient');
     if (invPatient) invPatient.value = rx.patient;
     renderRxQueue();
     updateInvoiceTotal();
     toast(`Invoice auto-populated for ${rx.patient}!`, 'info', 'request_quote');
-    // Scroll to billing
     document.getElementById('billing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
 let invPageSize = 50;
 let invCurrentPage = 1;
-let invCursors = [null]; // Array of DocumentSnapshots for pagination
 let currentSearchTerm = "";
 
 /* --- Fetch & Render Drug Inventory (Master Table) --- */
@@ -207,100 +198,59 @@ async function fetchAndRenderInventory(direction = 0) {
     list.innerHTML = '<p style="padding: 20px; color: var(--on-surface-var);">Loading live inventory...</p>';
     if (paginationControls) paginationControls.style.display = 'none';
 
-    // Dynamically import Firestore to avoid breaking non-module script
-    const { getFirestore, collection, getDocs, query, limit, where, orderBy, startAfter } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
-    
-    // Wait for firebaseApp to initialize
-    let retries = 0;
-    while (!window.firebaseApp && retries < 20) {
-      await new Promise(r => setTimeout(r, 100));
-      retries++;
-    }
-
-    if (!window.firebaseApp) {
-      list.innerHTML = '<p style="padding: 20px; color: var(--error);">Firebase not initialized.</p>';
-      return;
-    }
-
-    const db = getFirestore(window.firebaseApp);
-    let qConstraints = [];
-    
-    // Search constraints
-    if (currentSearchTerm) {
-      const term = currentSearchTerm.toLowerCase();
-      qConstraints.push(where('searchName', '>=', term));
-      qConstraints.push(where('searchName', '<=', term + '\uf8ff'));
-      qConstraints.push(orderBy('searchName'));
-    } else {
-      qConstraints.push(orderBy('brandName'));
-    }
-    
-    qConstraints.push(limit(invPageSize));
-
-    // Pagination logic
     if (direction === 1) {
       invCurrentPage++;
     } else if (direction === -1) {
       invCurrentPage--;
     } else {
       invCurrentPage = 1;
-      invCursors = [null]; // Reset cursors on new search
     }
 
-    const cursor = invCursors[invCurrentPage - 1];
-    if (cursor) {
-      qConstraints.push(startAfter(cursor));
+    const params = {
+      search: currentSearchTerm || undefined,
+      page: invCurrentPage,
+      limit: invPageSize
+    };
+
+    const response = await window.API.getInventory(params);
+
+    if (!response.success) {
+      list.innerHTML = '<p style="padding: 20px; color: var(--error);">Failed to load inventory.</p>';
+      return;
     }
 
-    const q = query(collection(db, 'inventory'), ...qConstraints);
-    const snapshot = await getDocs(q);
-    
-    DRUG_INVENTORY = [];
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      const batches = data.batches && data.batches.length > 0 ? data.batches : [{ batchNo: data.batch || 'LEGACY', stock: data.stock || 0, expiry: data.expiry || '-', mrp: data.mrp || 0 }];
-      DRUG_INVENTORY.push({
-        _docId: doc.id,
-        itemNo: data.itemNo || '-',
-        name: data.brandName || 'Unknown',
-        content: data.content || '-',
-        batch: data.batch || '-',
-        mrp: data.mrp || 0,
-        cost: data.cost || 0,
-        stock: data.stock || 0,
-        unit: data.unit || 'units',
-        expiry: data.expiry || '-',
-        purchaseDate: data.purchaseDate || '-',
-        distributor: data.distributor || '-',
-        batches: batches,
-        rack: data.rack || ''
-      });
-    });
+    DRUG_INVENTORY = (response.data || []).map(item => ({
+      _docId: item.id,
+      itemNo: item.itemNo || '-',
+      name: item.brandName || item.name || 'Unknown',
+      content: item.content || '-',
+      batch: item.batch || '-',
+      mrp: item.mrp || 0,
+      cost: item.cost || 0,
+      stock: item.stock || 0,
+      unit: item.unit || 'units',
+      expiry: item.expiry || '-',
+      purchaseDate: item.purchaseDate || '-',
+      distributor: item.distributor || '-',
+      batches: item.batches || [],
+      rack: item.rack || ''
+    }));
 
     if (DRUG_INVENTORY.length === 0) {
       list.innerHTML = '<p style="padding: 20px; color: var(--on-surface-var);">No matching inventory found.</p>';
       return;
     }
 
-    // Save cursor for NEXT page
-    const lastDoc = snapshot.docs[snapshot.docs.length - 1];
-    if (invCursors.length <= invCurrentPage) {
-      invCursors.push(lastDoc);
-    } else {
-      invCursors[invCurrentPage] = lastDoc;
-    }
-
     renderInventoryUI();
-    
-    // Update pagination UI
+
     if (paginationControls) {
       paginationControls.style.display = 'flex';
+      const pagination = response.pagination || {};
       document.getElementById('inventoryPageInfo').textContent = `Showing page ${invCurrentPage}`;
-      document.getElementById('invPrevBtn').disabled = (invCurrentPage === 1);
-      document.getElementById('invNextBtn').disabled = (snapshot.docs.length < invPageSize);
+      document.getElementById('invPrevBtn').disabled = (invCurrentPage <= 1);
+      document.getElementById('invNextBtn').disabled = !pagination.totalPages || invCurrentPage >= pagination.totalPages;
     }
 
-    // Re-render the initial invoice line with new options based on current view
     document.getElementById('invoiceLines').innerHTML = '';
     addInvoiceLine();
   } catch (error) {
@@ -365,20 +315,15 @@ async function fetchAndRenderStockLevels() {
 
   try {
     list.innerHTML = '<p style="padding: 20px; color: var(--on-surface-var);">Loading stock levels...</p>';
-    
-    // We already have db from fetchAndRenderInventory, but just in case:
-    if (!window.firebaseApp) return;
-    const { getFirestore, collection, getDocs, query, limit, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js');
-    const db = getFirestore(window.firebaseApp);
-    
-    // Fetch items with lowest stock first
-    const q = query(collection(db, 'inventory'), orderBy('stock', 'asc'), limit(15));
-    const snapshot = await getDocs(q);
-    
-    let lowStockItems = [];
-    snapshot.forEach(doc => {
-      lowStockItems.push(doc.data());
-    });
+
+    const response = await window.API.getInventory({ low_stock: true, limit: 15, page: 1 });
+
+    if (!response.success || !response.data) {
+      list.innerHTML = '<p style="padding: 20px; color: var(--on-surface-var);">All stock levels are optimal.</p>';
+      return;
+    }
+
+    const lowStockItems = response.data;
 
     if (lowStockItems.length === 0) {
       list.innerHTML = '<p style="padding: 20px; color: var(--on-surface-var);">All stock levels are optimal.</p>';
@@ -386,13 +331,12 @@ async function fetchAndRenderStockLevels() {
     }
 
     list.innerHTML = lowStockItems.map(drug => {
-      // Fake max stock calculation for the UI progress bar since CSV doesn't have it
       const maxStock = Math.max(drug.stock * 2, 50);
       const pct = Math.round((drug.stock / maxStock) * 100);
       const statusClass = pct > 40 ? 'ok' : pct > 15 ? 'low' : 'critical';
       return `
         <div class="stock-item">
-          <span class="stock-label">${drug.brandName} <span style="font-size:0.7rem; color:var(--on-surface-var)">₹${drug.mrp}</span></span>
+          <span class="stock-label">${drug.brandName || drug.name} <span style="font-size:0.7rem; color:var(--on-surface-var)">₹${drug.mrp}</span></span>
           <div class="stock-bar-wrap">
             <div class="stock-bar ${statusClass}" style="width:${pct}%;"></div>
           </div>
@@ -455,14 +399,28 @@ async function submitInvoice() {
   const patient = document.getElementById('invoicePatient')?.value || 'Patient';
   const totalText = document.getElementById('invoiceTotal')?.textContent || '₹0';
   const amount = parseFloat(totalText.replace(/[₹,]/g, '')) || 0;
-  const fs = window.firebaseDb && window.firebaseFS;
   try {
-    if (fs && amount > 0) {
-      await fs.addDoc(fs.collection(window.firebaseDb, 'transactions'), {
-        patientName: patient, amount, status: 'paid', items: document.querySelectorAll('.invoice-line').length,
-        createdAt: fs.serverTimestamp?.() || new Date().toISOString()
+    if (amount > 0) {
+      const items = [];
+      document.querySelectorAll('.invoice-line').forEach((line) => {
+        const sel = line.querySelector('.inv-drug-select');
+        const qtyInput = line.querySelector('.inv-qty');
+        const priceInput = line.querySelector('.inv-price');
+        if (!sel || !qtyInput || !priceInput) return;
+        const itemName = sel.options[sel.selectedIndex]?.text;
+        const qty = parseInt(qtyInput.value) || 0;
+        const unitPrice = parseFloat(priceInput.value) || 0;
+        if (!itemName || qty <= 0) return;
+        items.push({ item_name: itemName, quantity: qty, unit_price: unitPrice });
       });
-      // Decrement inventory stock for each invoice line
+      await window.API.createTransaction({
+        patient_id: patient,
+        type: 'pharmacy',
+        description: 'Pharmacy bill',
+        amount: amount,
+        payment_method: 'cash',
+        items: items
+      });
       document.querySelectorAll('.invoice-line').forEach(async (line) => {
         const sel = line.querySelector('.inv-drug-select');
         const qtyInput = line.querySelector('.inv-qty');
@@ -470,11 +428,9 @@ async function submitInvoice() {
         const drugName = sel.options[sel.selectedIndex]?.text;
         const qty = parseInt(qtyInput.value) || 0;
         if (!drugName || qty <= 0) return;
-        // Find the inventory item by name in DRUG_INVENTORY
         const item = DRUG_INVENTORY.find(d => d.name.toLowerCase() === drugName.toLowerCase());
-        if (item && item._docId) {
+        if (item) {
           const newStock = Math.max(0, (item.stock || 0) - qty);
-          // Decrement from first available batch
           const updatedBatches = item.batches ? item.batches.map(b => ({ ...b })) : [];
           if (updatedBatches.length > 0) {
             let remaining = qty;
@@ -485,7 +441,6 @@ async function submitInvoice() {
               remaining -= take;
             }
           }
-          await fs.updateDoc(fs.doc(window.firebaseDb, 'inventory', item._docId), { stock: newStock, batches: updatedBatches.filter(b => b.stock > 0) });
           item.stock = newStock;
           if (item.batches) item.batches = updatedBatches.filter(b => b.stock > 0);
         }
@@ -518,15 +473,9 @@ async function addManualRx() {
     status: 'pending',
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     timestamp: new Date().toISOString(),
-    priority: 'medium',
-    createdAt: window.firebaseFS?.serverTimestamp?.() || new Date().toISOString()
+    priority: 'medium'
   };
-  let docRef;
-  try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'prescriptions'), newRx);
-  } catch (e) { addConsoleLog('WARN', 'Failed to save Rx: ' + e.message); }
-  RX_QUEUE.unshift({ id: docRef?.id || `RX-${2400 + RX_QUEUE.length + 1}`, ...newRx, meds: newRx.medications });
+  RX_QUEUE.unshift({ id: `RX-${2400 + RX_QUEUE.length + 1}`, ...newRx, meds: newRx.medications });
   renderRxQueue();
   closeModal(null, 'newRxModal');
   document.getElementById('manualRxPatient').value = '';
@@ -535,37 +484,32 @@ async function addManualRx() {
   toast(`Manual Rx added for ${patient}!`, 'success', 'receipt_long');
 }
 
-
-
-async function loadRxQueueFromFirestore() {
+async function loadRxQueue() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'prescriptions'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
-    const snap = await fs.getDocs(q);
-    if (snap.empty) return;
-    RX_QUEUE = snap.docs.map(d => {
-      const data = d.data();
+    const response = await window.API.getPharmacyPrescriptions({});
+    if (!response.success || !response.data) return;
+    RX_QUEUE = response.data.map(d => {
+      const meds = d.medications || d.meds || [];
       return {
         id: d.id,
-        patient: data.patientName || data.patient || 'Unknown',
-        age: data.patientAge || data.age || 'N/A',
-        doctor: data.doctor || 'Unknown',
-        meds: data.medications || data.meds || [],
-        status: data.status || 'pending',
-        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
-        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
-        priority: data.priority || 'medium'
+        patient: d.patientName || d.patient || 'Unknown',
+        age: d.patientAge || d.age || 'N/A',
+        doctor: d.doctor || 'Unknown',
+        meds: typeof meds === 'string' ? meds.split('\n').filter(Boolean) : meds,
+        status: d.status || 'pending',
+        time: d.time || d.createdAt || '—',
+        timestamp: d.timestamp || d.createdAt || new Date().toISOString(),
+        priority: d.priority || 'medium'
       };
     });
   } catch (e) {
-    addConsoleLog('WARN', 'Could not load Rx queue from Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Could not load Rx queue: ' + e.message);
   }
 }
 
 /* --- Input listeners for invoice total --- */
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadRxQueueFromFirestore();
+  await loadRxQueue();
   const todayChip = document.querySelector(`#rxSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
     sfChipSelect(todayChip, 'rx', 'today');
@@ -575,10 +519,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   fetchAndRenderInventory();
   fetchAndRenderStockLevels();
 
-  // Event delegation for invoice inputs
   document.getElementById('invoiceLines')?.addEventListener('input', updateInvoiceTotal);
 
-  // Setup search and pagination listeners
   const searchInput = document.getElementById('inventorySearch');
   if (searchInput) {
     let timeout = null;

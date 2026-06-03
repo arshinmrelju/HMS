@@ -1,19 +1,5 @@
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  serverTimestamp,
-  query,
-  where,
-  orderBy,
-  getDocs,
-  limit
-} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-
-let db = null;
-
 export function initAuditLogger(app) {
-  db = getFirestore(app);
+  console.log('[AuditLogger] Audit logging is now handled server-side. Client logger disabled.');
 }
 
 function getUserInfo() {
@@ -28,74 +14,61 @@ function getUserInfo() {
 }
 
 export async function logAuditEvent(action, resourceType, resourceId, details = {}) {
-  if (!db) return;
   const user = getUserInfo();
-  try {
-    await addDoc(collection(db, 'audit_logs'), {
-      ...user,
-      action,
-      resourceType,
-      resourceId: resourceId || null,
-      details: JSON.stringify(details),
-      ip: 'client-side',
-      timestamp: serverTimestamp(),
-      userAgent: navigator.userAgent
-    });
-  } catch (e) {
-    console.warn('Audit log failed (non-blocking):', e.message);
-  }
+  console.log('[AuditLogger]', { action, resourceType, resourceId, details, user });
 }
 
 export async function getAuditLogs(actionFilter = null, maxResults = 100) {
-  if (!db) return [];
-  const constraints = [orderBy('timestamp', 'desc'), limit(maxResults)];
-  if (actionFilter) {
-    constraints.unshift(where('action', '==', actionFilter));
+  console.log('[AuditLogger] Fetch audit logs from server:', { actionFilter, maxResults });
+  try {
+    const url = actionFilter
+      ? `/api/audit?action=${encodeURIComponent(actionFilter)}&limit=${maxResults}`
+      : `/api/audit?limit=${maxResults}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.warn('[AuditLogger] Failed to fetch audit logs:', e.message);
+    return [];
   }
-  const q = query(collection(db, 'audit_logs'), ...constraints);
-  const snap = await getDocs(q);
-  const results = [];
-  snap.forEach(d => results.push({ id: d.id, ...d.data() }));
-  return results;
 }
 
-/* Convenience wrappers */
 export function logLogin(userId) {
-  return logAuditEvent('LOGIN', 'auth', userId);
+  console.log('[AuditLogger] LOGIN', userId);
 }
 
 export function logLogout(userId) {
-  return logAuditEvent('LOGOUT', 'auth', userId);
+  console.log('[AuditLogger] LOGOUT', userId);
 }
 
 export function logPatientView(patientId, patientName) {
-  return logAuditEvent('PATIENT_VIEW', 'patients', patientId, { patientName });
+  console.log('[AuditLogger] PATIENT_VIEW', { patientId, patientName });
 }
 
 export function logPatientCreate(patientId, patientName) {
-  return logAuditEvent('PATIENT_CREATE', 'patients', patientId, { patientName });
+  console.log('[AuditLogger] PATIENT_CREATE', { patientId, patientName });
 }
 
 export function logPatientUpdate(patientId, patientName) {
-  return logAuditEvent('PATIENT_UPDATE', 'patients', patientId, { patientName });
+  console.log('[AuditLogger] PATIENT_UPDATE', { patientId, patientName });
 }
 
 export function logPatientDelete(patientId, patientName) {
-  return logAuditEvent('PATIENT_DELETE', 'patients', patientId, { patientName });
+  console.log('[AuditLogger] PATIENT_DELETE', { patientId, patientName });
 }
 
 export function logPrescriptionCreate(rxId, patientName) {
-  return logAuditEvent('PRESCRIPTION_CREATE', 'prescriptions', rxId, { patientName });
+  console.log('[AuditLogger] PRESCRIPTION_CREATE', { rxId, patientName });
 }
 
 export function logTransactionCreate(txnId, amount) {
-  return logAuditEvent('TRANSACTION_CREATE', 'transactions', txnId, { amount });
+  console.log('[AuditLogger] TRANSACTION_CREATE', { txnId, amount });
 }
 
 export function logInvoiceCreate(invId, amount) {
-  return logAuditEvent('INVOICE_CREATE', 'invoices', invId, { amount });
+  console.log('[AuditLogger] INVOICE_CREATE', { invId, amount });
 }
 
 export function logAccessDenied(resource, userId, role) {
-  return logAuditEvent('ACCESS_DENIED', resource, null, { userId, role });
+  console.log('[AuditLogger] ACCESS_DENIED', { resource, userId, role });
 }

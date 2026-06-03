@@ -47,7 +47,7 @@ function renderSpecimenQueue() {
       </div>
       <div style="flex:1;min-width:0;">
         <div class="specimen-type">${spc.test}</div>
-        <div class="specimen-name">${spc.patient} <span style="font-weight:400;font-size:0.77rem;color:var(--on-surface-var)">· Age ${spc.age}</span></div>
+        <div class="specimen-name">${spc.patient} <span style="font-weight:400;font-size:0.77rem;color:var(--on-surface-var);">· Age ${spc.age}</span></div>
         <div class="specimen-detail">${spc.id} · ${spc.sample} · ${spc.time}</div>
       </div>
       <span class="spec-status ${spc.status}">${spc.critical ? '⚠ ' : ''}${spc.status.charAt(0).toUpperCase() + spc.status.slice(1)}</span>
@@ -225,19 +225,23 @@ async function saveMetrics() {
     renderResults();
   }
 
-  // Persist to Firestore
+  // Persist via API
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs) {
-      await fs.updateDoc(fs.doc(window.firebaseDb, 'lab_orders', specId), {
-        status: spc.status,
-        results: vals,
-        critical: hasAlert,
-        completedAt: fs.serverTimestamp?.() || new Date().toISOString()
-      });
-    }
+    const apiStatus = spc.status === 'complete' ? 'completed' : 'processing';
+    await window.API.updateLabOrderStatus(specId, apiStatus);
+
+    const results = [
+      { parameter: 'WBC', value: vals.wbc, normal_range: '4-11', unit: '×10³/µL', remarks: '' },
+      { parameter: 'RBC', value: vals.rbc, normal_range: '4.5-5.5', unit: '×10⁶/µL', remarks: '' },
+      { parameter: 'Hemoglobin', value: vals.hgb, normal_range: '13.5-17.5', unit: 'g/dL', remarks: '' },
+      { parameter: 'Platelet', value: vals.plt, normal_range: '150-400', unit: '×10³/µL', remarks: '' },
+      { parameter: 'Glucose', value: vals.glu, normal_range: '70-100', unit: 'mg/dL', remarks: '' },
+      { parameter: 'Creatinine', value: vals.cre, normal_range: '0.7-1.3', unit: 'mg/dL', remarks: '' }
+    ].filter(r => r.value);
+
+    await window.API.saveLabResults(specId, results);
   } catch (e) {
-    addConsoleLog('WARN', 'Failed to save metrics to Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Failed to save metrics: ' + e.message);
   }
 
   toast(hasAlert ? `⚠ Abnormal values detected for ${spc.patient}!` : `Results saved for ${spc.patient}!`, hasAlert ? 'warning' : 'success');
@@ -251,20 +255,31 @@ async function addSpecimen() {
   const doctor = document.getElementById('newSpcDoctor')?.value.trim() || 'Unknown';
   if (!patient) { toast('Please enter patient name.', 'warning'); return; }
 
-  const newSpc = {
-    patientName: patient, age: 0, testType: test, sampleType: sample, doctor,
-    status: 'queued', time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: new Date().toISOString(),
-    critical: false,
-    createdAt: window.firebaseFS?.serverTimestamp?.() || new Date().toISOString()
-  };
-  let docRef;
+  let docId;
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (fs) docRef = await fs.addDoc(fs.collection(window.firebaseDb, 'lab_orders'), newSpc);
+    const resp = await window.API.createLabOrder({
+      patient_id: patient,
+      doctor_id: doctor,
+      test_name: test,
+      notes: sample ? `Sample: ${sample}` : ''
+    });
+    if (resp.success && resp.data) {
+      docId = resp.data.id || resp.data._id;
+    }
   } catch (e) { addConsoleLog('WARN', 'Failed to save specimen: ' + e.message); }
 
-  SPECIMENS.push({ id: docRef?.id || `SPC-${1100 + SPECIMENS.length + 1}`, ...newSpc, patient: newSpc.patientName, test: newSpc.testType, sample: newSpc.sampleType });
+  SPECIMENS.push({
+    id: docId || `SPC-${1100 + SPECIMENS.length + 1}`,
+    patient,
+    age: 0,
+    test,
+    sample,
+    doctor,
+    status: 'queued',
+    time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    timestamp: new Date().toISOString(),
+    critical: false
+  });
   renderSpecimenQueue();
   closeModal(null, 'newSpecimenModal');
   document.getElementById('newSpcPatient').value = '';
@@ -280,37 +295,36 @@ function printResult(id) {
 
 async function loadSpecimensFromFirestore() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const q = fs.query(fs.collection(window.firebaseDb, 'lab_orders'), fs.orderBy('createdAt', 'desc'), fs.limit(50));
-    const snap = await fs.getDocs(q);
-    if (snap.empty) return;
-    snap.forEach(d => {
-      const data = d.data();
+    const resp = await window.API.getLabOrders({ limit: 50 });
+    if (!resp.success) return;
+    const orders = resp.data;
+    if (!orders || orders.length === 0) return;
+    orders.forEach(order => {
       SPECIMENS.push({
-        id: d.id,
-        patient: data.patientName || data.patient || 'Unknown',
-        age: data.patientAge || data.age || 'N/A',
-        test: data.test || data.testType || 'General',
-        sample: data.sample || data.sampleType || 'Blood',
-        doctor: data.doctor || data.referredBy || 'Unknown',
-        status: data.status || 'queued',
-        time: data.time || data.createdAt?.toDate?.()?.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) || '—',
-        timestamp: data.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
-        critical: data.critical || false
+        id: order.id || order._id,
+        patient: order.patientName || order.patient || order.patient_id || 'Unknown',
+        age: order.patientAge || order.age || 'N/A',
+        test: order.test || order.test_name || order.testType || 'General',
+        sample: order.sample || order.sampleType || 'Blood',
+        doctor: order.doctor || order.referredBy || order.doctor_id || 'Unknown',
+        status: order.status || 'queued',
+        time: order.time || (order.createdAt ? new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'),
+        timestamp: order.createdAt ? new Date(order.createdAt).toISOString() : new Date().toISOString(),
+        critical: order.critical || false
       });
-      if (data.status === 'complete' || data.status === 'Normal') {
+      if (order.status === 'complete' || order.status === 'completed' || order.status === 'Normal') {
         COMPLETED_RESULTS.unshift({
-          id: d.id, patient: data.patientName || data.patient || 'Unknown',
-          test: data.test || data.testType || 'General',
-          status: data.critical ? 'Elevated' : 'Normal',
-          time: data.time || '—',
-          doctor: data.doctor || '—'
+          id: order.id || order._id,
+          patient: order.patientName || order.patient || order.patient_id || 'Unknown',
+          test: order.test || order.test_name || order.testType || 'General',
+          status: order.critical ? 'Elevated' : 'Normal',
+          time: order.time || '—',
+          doctor: order.doctor || '—'
         });
       }
     });
   } catch (e) {
-    addConsoleLog('WARN', 'Could not load specimens from Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Could not load specimens: ' + e.message);
   }
 }
 
@@ -325,4 +339,3 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   renderResults();
 });
-
