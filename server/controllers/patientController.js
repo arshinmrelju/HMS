@@ -123,4 +123,52 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getAll, getById, create, update, remove };
+const bulkCreate = async (req, res, next) => {
+  try {
+    const { patients } = req.body;
+    if (!patients || !Array.isArray(patients) || patients.length === 0) {
+      return res.status(400).json({ success: false, message: 'No patient data provided.' });
+    }
+    let inserted = 0;
+    const batchSize = 50;
+    for (let i = 0; i < patients.length; i += batchSize) {
+      const batch = patients.slice(i, i + batchSize);
+      const values = [];
+      for (const row of batch) {
+        const name = String(row['Name'] || '').trim();
+        if (!name) continue;
+        const nameParts = name.split(/\s+/);
+        const fname = nameParts[0] || '';
+        const lname = nameParts.slice(1).join(' ') || '';
+        let age = parseInt(row['Age']);
+        if (isNaN(age) || age < 0 || age > 120) age = 0;
+        const gender = String(row['Sex'] || row['gender'] || '').trim();
+        const phone = String(row['Phone'] || row['contact'] || '').split(/[,/\s]+/)[0].trim().slice(0, 20);
+        const address = [String(row[' House Name'] || row['address'] || '').trim(), String(row['Place'] || '').trim()].filter(Boolean).join(', ');
+        let lastVisit = null;
+        if (row['Date']) {
+          const parts = String(row['Date']).split('-');
+          if (parts.length === 3) lastVisit = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        let notesArr = [];
+        for (const key of ['Remarks', 'Remark ', 'Diabetic Dtls', 'Allergy', 'BP', 'Temprature', 'Doctor', 'Hosp. OP No', 'Relation']) {
+          if (row[key]) notesArr.push(`${key}: ${row[key]}`);
+        }
+        values.push([fname, lname, phone, '', 'General', 'Outpatient', '', age || null, gender, address, lastVisit, 'Active', null, req.user.id, notesArr.join('\n')]);
+      }
+      if (values.length === 0) continue;
+      const placeholders = values.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+      await pool.query(
+        `INSERT INTO patients (fname,lname,contact,email,department,patient_type,blood_group,age,gender,address,last_visit,status,doctor_id,created_by,notes) VALUES ${placeholders}`,
+        values.flat()
+      );
+      inserted += values.length;
+    }
+    await logAuditEvent(req.user.id, 'BULK_IMPORT_PATIENTS', 'patient', null, { count: inserted }, req.ip);
+    res.json({ success: true, message: `Imported ${inserted} patients.`, data: { imported: inserted } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getAll, getById, create, update, remove, bulkCreate };

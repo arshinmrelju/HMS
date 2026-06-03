@@ -1,7 +1,6 @@
 /* Wellness Medicals - Auth & API Initialization
- * Replaces Firebase with Express REST API backend.
- * Maintains the same API (window.HMS_AUTH, window.HMS, window._authReady)
- * so that all existing code works with zero HTML changes.
+ * Uses Express REST API backend (MySQL) for all data operations.
+ * Authentication is handled via JWT tokens from the backend.
  */
 
 (function () {
@@ -60,6 +59,9 @@
         method: 'POST',
         body: { email, password }
       });
+      if (!data || !data.data || !data.data.user) {
+        throw new Error('Invalid login response from server.');
+      }
       const user = data.data.user;
       const token = data.data.token;
       this.setSession({
@@ -171,39 +173,9 @@
 
   window.esc = function esc(val) {
     if (val == null) return '';
-    return String(val).replace(/[&<>"']/g, function(m) {
+    return String(val).replace(/[&<>"']/g, function (m) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
     });
-  };
-
-  /* Preserve old firebaseFS compat (maps to API) */
-  const compatFS = {
-    async getDocs(queryOrRef) {
-      return { size: 0, docs: [], forEach() {} };
-    },
-    async getDoc(ref) { return { exists() { return false; }, data() { return null; }, id: null }; },
-    async addDoc(col, data) { return { id: 'compat-' + Date.now() }; },
-    async setDoc(ref, data) {},
-    async updateDoc(ref, data) {},
-    async deleteDoc(ref) {},
-    collection(db, name) { return name; },
-    doc(db, col, id) { return { id, col }; },
-    query(...args) { return args; },
-    where(field, op, val) { return { field, op, val }; },
-    orderBy(field, dir) { return { field, dir }; },
-    limit(n) { return n; },
-    serverTimestamp() { return new Date().toISOString(); },
-    Timestamp: { fromDate(d) { return d; } }
-  };
-  window.firebaseFS = compatFS;
-  window.firebaseDb = {};
-
-  window.sendFirebasePasswordReset = async (email) => {
-    throw new Error('Password reset is handled by the admin. Please contact your administrator.');
-  };
-
-  window.createFirebaseUser = async (email, password) => {
-    throw new Error('User creation is handled by the staff management API.');
   };
 
   /* Restore session on page load */
@@ -212,6 +184,9 @@
     if (existing && existing.token) {
       try {
         const data = await apiRequest('/auth/me');
+        if (!data || !data.data) {
+          throw new Error('Invalid profile response');
+        }
         const user = data.data;
         HMS_AUTH.setSession({
           ...existing,
@@ -221,15 +196,14 @@
           phone: user.phone
         });
         window._currentFirebaseUser = { uid: user.id, email: user.email };
-      } catch {
-        // Token expired — clear session but don't redirect (let individual pages handle it)
+      } catch (err) {
         if (existing.token) {
           try {
             const parsed = JSON.parse(atob(existing.token.split('.')[1]));
             if (parsed.exp * 1000 < Date.now()) {
               sessionStorage.removeItem('hms_session');
             }
-          } catch {}
+          } catch { }
         }
       }
     }
@@ -240,26 +214,22 @@
      API Helper - window.API
      ============================================ */
   window.API = {
-    // Auth
     async login(email, password) { const d = await apiRequest('/auth/login', { method: 'POST', body: { email, password } }); return d.data; },
     async getProfile() { return apiRequest('/auth/me'); },
     async changePassword(currentPassword, newPassword) { return apiRequest('/auth/change-password', { method: 'PUT', body: { currentPassword, newPassword } }); },
 
-    // Patients
     async getPatients(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/patients${qs ? '?' + qs : ''}`); },
     async getPatient(id) { return apiRequest(`/patients/${id}`); },
     async createPatient(data) { return apiRequest('/patients', { method: 'POST', body: data }); },
     async updatePatient(id, data) { return apiRequest(`/patients/${id}`, { method: 'PUT', body: data }); },
     async deletePatient(id) { return apiRequest(`/patients/${id}`, { method: 'DELETE' }); },
 
-    // Appointments
     async getAppointments(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/appointments${qs ? '?' + qs : ''}`); },
     async getAppointment(id) { return apiRequest(`/appointments/${id}`); },
     async createAppointment(data) { return apiRequest('/appointments', { method: 'POST', body: data }); },
     async updateAppointment(id, data) { return apiRequest(`/appointments/${id}`, { method: 'PUT', body: data }); },
     async deleteAppointment(id) { return apiRequest(`/appointments/${id}`, { method: 'DELETE' }); },
 
-    // Doctors
     async getDoctors() { return apiRequest('/doctors'); },
     async getDoctor(id) { return apiRequest(`/doctors/${id}`); },
     async getDoctorPatients(id) { return apiRequest(`/doctors/${id}/patients`); },
@@ -268,7 +238,6 @@
     async getDoctorPrescriptions(id) { return apiRequest(`/doctors/${id}/prescriptions`); },
     async getDoctorStats(id) { return apiRequest(`/doctors/${id}/stats`); },
 
-    // Pharmacy
     async getInventory(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/pharmacy/inventory${qs ? '?' + qs : ''}`); },
     async getInventoryItem(id) { return apiRequest(`/pharmacy/inventory/${id}`); },
     async addInventoryItem(data) { return apiRequest('/pharmacy/inventory', { method: 'POST', body: data }); },
@@ -281,7 +250,6 @@
     async approveRequisition(id) { return apiRequest(`/pharmacy/requisitions/${id}/approve`, { method: 'PUT' }); },
     async receiveRequisition(id) { return apiRequest(`/pharmacy/requisitions/${id}/receive`, { method: 'PUT' }); },
 
-    // Lab
     async getLabTests() { return apiRequest('/lab/tests'); },
     async getLabOrders(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/lab/orders${qs ? '?' + qs : ''}`); },
     async createLabOrder(data) { return apiRequest('/lab/orders', { method: 'POST', body: data }); },
@@ -289,14 +257,12 @@
     async saveLabResults(id, results) { return apiRequest(`/lab/orders/${id}/results`, { method: 'PUT', body: { results } }); },
     async getLabResults(id) { return apiRequest(`/lab/orders/${id}/results`); },
 
-    // Billing
     async getTransactions(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/billing/transactions${qs ? '?' + qs : ''}`); },
     async getTransaction(id) { return apiRequest(`/billing/transactions/${id}`); },
     async createTransaction(data) { return apiRequest('/billing/transactions', { method: 'POST', body: data }); },
     async updateTransactionStatus(id, data) { return apiRequest(`/billing/transactions/${id}/status`, { method: 'PUT', body: data }); },
     async getBillingStats(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/billing/transactions/stats${qs ? '?' + qs : ''}`); },
 
-    // Staff
     async getStaff() { return apiRequest('/staff'); },
     async getStaffMember(id) { return apiRequest(`/staff/${id}`); },
     async createStaff(data) { return apiRequest('/staff', { method: 'POST', body: data }); },
@@ -310,15 +276,12 @@
     async getHeadOfStaff() { return apiRequest('/staff/head-of-staff'); },
     async assignHeadOfStaff(userId) { return apiRequest('/staff/head-of-staff', { method: 'POST', body: { user_id: userId } }); },
 
-    // Dashboard
     async getDashboardStats(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/dashboard/stats${qs ? '?' + qs : ''}`); },
     async getRoleStats() { return apiRequest('/dashboard/role-stats'); },
     async getRecentActivity() { return apiRequest('/dashboard/recent-activity'); },
 
-    // Audit
     async getAuditLogs(params = {}) { const qs = new URLSearchParams(params).toString(); return apiRequest(`/audit${qs ? '?' + qs : ''}`); },
 
-    // Token helpers
     getToken() { return getStoredToken(); }
   };
 })();

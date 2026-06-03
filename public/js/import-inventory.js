@@ -1,30 +1,4 @@
-import { getFirestore, collection, writeBatch, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
-
-const auth = getAuth(window.firebaseApp);
-const db = getFirestore(window.firebaseApp);
-
-let authorized = false;
-
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    getDoc(doc(db, 'users', user.uid)).then(snap => {
-      if (snap.exists() && snap.data().role === 'Admin') {
-        authorized = true;
-        document.getElementById('startBtn').disabled = false;
-        log('<span style="color:green">Authenticated as Admin — ready to import.</span>');
-      } else {
-        log('<span style="color:red">Access denied: Admin role required.</span>');
-      }
-    }).catch(() => {
-      log('<span style="color:red">Could not verify credentials.</span>');
-    });
-  } else {
-    log('<span style="color:red">Not authenticated. Please log in first.</span>');
-    document.getElementById('startBtn').disabled = true;
-  }
-});
-
+const API_BASE = '/api';
 
 function log(msg) {
   const logEl = document.getElementById('log');
@@ -32,96 +6,98 @@ function log(msg) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-document.getElementById('startBtn').addEventListener('click', async () => {
-  if (!authorized) {
-    log('<span style="color:red">Unauthorized. Admin login required.</span>');
+async function waitForAuth() {
+  if (window._authReady) await window._authReady;
+  const user = window.HMS ? window.HMS.getUser() : null;
+  if (!user || user.role !== 'Admin') {
+    log('<span style="color:red">Access denied: Admin role required.</span>');
+    return false;
+  }
+  return true;
+}
+
+function getToken() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem('hms_session') || 'null');
+    return s ? s.token : null;
+  } catch { return null; }
+}
+
+async function apiRequest(endpoint, options = {}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const btn = document.getElementById('startBtn');
+  const fileInput = document.getElementById('fileInput');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+
+  const authed = await waitForAuth();
+  if (authed) {
+    btn.disabled = false;
+    btn.textContent = 'Start Import';
+    log('<span style="color:green">Authenticated as Admin — ready to import.</span>');
+  } else {
+    btn.textContent = 'Access Denied';
     return;
   }
 
-  const btn = document.getElementById('startBtn');
-  btn.disabled = true;
-  btn.textContent = "Importing... Please wait";
-  document.getElementById('progressWrap').style.display = 'block';
-
-  log('Fetching inventory.csv...');
-  try {
-    const response = await fetch('inventory.csv');
-    if (!response.ok) throw new Error('Could not find inventory.csv in the public folder');
-    const csvText = await response.text();
-
-    log('Parsing CSV...');
-    Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async function(results) {
-        const data = results.data;
-        log(`Parsed ${data.length} rows successfully.`);
-        await uploadToFirestore(data);
-      }
-    });
-  } catch (error) {
-    log(`<span style="color:red">Error: ${error.message}</span>`);
-    btn.disabled = false;
-    btn.textContent = "Retry Import";
-  }
-});
-
-async function uploadToFirestore(data) {
-  const BATCH_SIZE = 450;
-  let batches = [];
-  let currentBatch = writeBatch(db);
-  let operationCounter = 0;
-
-  for (let i = 0; i < data.length; i++) {
-    const row = data[i];
-    if (!row.name || row.name.trim() === '') continue;
-
-    const item = {
-      itemNo: i + 1,
-      brandName: row.name ? row.name.trim() : '',
-      content: row.company ? row.company.trim() : '',
-      batch: row.batch ? row.batch.trim() : '',
-      purchaseDate: row.rec_date ? row.rec_date.trim() : '',
-      mrp: row.mrp ? parseFloat(row.mrp) || 0 : 0,
-      distributor: row.supplier ? row.supplier.trim() : '',
-      expiry: row.exp ? row.exp.trim() : '',
-      offer: '',
-      tax: '',
-      stock: row.stock ? parseFloat(row.stock) || 0 : 0,
-      unit: row.unit ? row.unit.trim() : '',
-      cost: row.cost ? parseFloat(row.cost) || 0 : 0,
-      searchName: row.name ? row.name.toLowerCase() : '',
-      addedAt: new Date().toISOString()
-    };
-
-    const docRef = doc(db, 'inventory', String(i + 1));
-    currentBatch.set(docRef, item);
-    operationCounter++;
-
-    if (operationCounter === BATCH_SIZE) {
-      batches.push(currentBatch);
-      currentBatch = writeBatch(db);
-      operationCounter = 0;
+  btn.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) {
+      log('<span style="color:red">Please select a .csv file first.</span>');
+      return;
     }
-  }
 
-  if (operationCounter > 0) {
-    batches.push(currentBatch);
-  }
+    btn.disabled = true;
+    btn.textContent = 'Importing... Please wait';
+    progressWrap.style.display = 'block';
 
-  log(`Prepared ${batches.length} batches. Starting upload...`);
-
-  for (let i = 0; i < batches.length; i++) {
+    log(`Reading ${file.name}...`);
     try {
-      await batches[i].commit();
-      const progress = Math.round(((i + 1) / batches.length) * 100);
-      document.getElementById('progressFill').style.width = `${progress}%`;
-      log(`Committed batch ${i + 1} of ${batches.length} (${progress}%)`);
-    } catch (e) {
-      log(`<span style="color:red">Error on batch ${i+1}: ${e.message}</span>`);
-    }
-  }
+      const text = await file.text();
 
-  log('<span style="color:green"><b>Import Complete!</b></span>');
-  document.getElementById('startBtn').textContent = "Import Completed";
-}
+      log('Parsing CSV...');
+      Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async function(results) {
+          const data = results.data;
+          log(`Parsed ${data.length} rows. Importing via API...`);
+
+          let imported = 0;
+          const batchSize = 50;
+          for (let i = 0; i < data.length; i += batchSize) {
+            const batch = data.slice(i, i + batchSize);
+            await apiRequest('/pharmacy/inventory/bulk', {
+              method: 'POST',
+              body: { items: batch }
+            });
+            imported += batch.length;
+            const pct = Math.round((imported / data.length) * 100);
+            progressFill.style.width = `${pct}%`;
+            log(`Imported ${imported}/${data.length} (${pct}%)`);
+          }
+
+          log('<span style="color:green"><b>Import Complete!</b></span>');
+          btn.textContent = 'Import Completed';
+        }
+      });
+    } catch (error) {
+      log(`<span style="color:red">Error: ${error.message}</span>`);
+      btn.disabled = false;
+      btn.textContent = 'Retry Import';
+    }
+  });
+});

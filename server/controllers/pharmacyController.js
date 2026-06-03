@@ -196,8 +196,67 @@ const receiveRequisition = async (req, res, next) => {
   }
 };
 
+const bulkImportInventory = async (req, res, next) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'No inventory data provided.' });
+    }
+    let inserted = 0;
+    const batchSize = 50;
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      const values = [];
+      for (const row of batch) {
+        const name = String(row['name'] || row['brand_name'] || '').trim();
+        if (!name) continue;
+        const stock = parseFloat(row['stock'] || row['quantity'] || 0);
+        if (stock <= 0) continue;
+        const costPrice = parseFloat(row['cost'] || row['cost_price'] || 0);
+        const rate = parseFloat(row['rate'] || row['selling_price'] || 0);
+        const mrp = parseFloat(row['mrp'] || 0);
+        const unit = String(row['unit'] || 'piece').trim();
+        const supplier = String(row['supplier'] || row['distributor'] || '').trim();
+        const company = String(row['company'] || row['content'] || '').trim();
+        const content = [company, String(row['rackno'] || '').trim()].filter(Boolean).join(' / ');
+
+        let purchaseDate = null;
+        if (row['rec_date']) {
+          const pd = String(row['rec_date']).split('-');
+          if (pd.length === 3) purchaseDate = `${pd[2]}-${pd[1]}-${pd[0]}`;
+        }
+        let expiryDate = null;
+        if (row['exp']) {
+          const ed = String(row['exp']).split('-');
+          if (ed.length === 3) {
+            const months = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+            let day = ed[0].padStart(2, '0');
+            let month = months[ed[1]] || ed[1].padStart(2, '0');
+            let year = ed[2].length === 2 ? '20' + ed[2] : ed[2];
+            if (year.length === 4 && parseInt(year) > 1900) expiryDate = `${year}-${month}-${day}`;
+          }
+        }
+
+        values.push([name, content, '', supplier, purchaseDate, expiryDate, Math.max(0, stock), unit, costPrice, rate || mrp, mrp, 5, 1, req.user.id]);
+      }
+      if (values.length === 0) continue;
+      const placeholders = values.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+      await pool.query(
+        `INSERT INTO inventory (brand_name,content,category,distributor,purchase_date,expiry_date,quantity,unit,cost_price,selling_price,mrp,reorder_level,is_active,created_by) VALUES ${placeholders}`,
+        values.flat()
+      );
+      inserted += values.length;
+    }
+    await logAuditEvent(req.user.id, 'BULK_IMPORT_INVENTORY', 'inventory', null, { count: inserted }, req.ip);
+    res.json({ success: true, message: `Imported ${inserted} inventory items.`, data: { imported: inserted } });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getInventory, getInventoryItem, addInventory, updateInventory, deleteInventory,
   getPrescriptions, fillPrescription,
-  getRequisitions, createRequisition, approveRequisition, receiveRequisition
+  getRequisitions, createRequisition, approveRequisition, receiveRequisition,
+  bulkImportInventory
 };

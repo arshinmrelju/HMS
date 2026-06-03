@@ -41,9 +41,18 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit', auditRoutes);
+const pool = require('./config/db');
 
-app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'Wellness Medicals API is running.', timestamp: new Date().toISOString() });
+app.get('/api/health', async (req, res) => {
+  try {
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 800))
+    ]);
+    res.json({ success: true, database: 'healthy', message: 'Wellness Medicals API is running.', timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(503).json({ success: false, database: 'unhealthy', error: err.message, message: 'Wellness Medicals API is running but database is offline.', timestamp: new Date().toISOString() });
+  }
 });
 
 // Catch-all 404 for unmatched API routes

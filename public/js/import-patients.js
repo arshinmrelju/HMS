@@ -1,29 +1,4 @@
-import { getFirestore, collection, writeBatch, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
-import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
-
-const auth = getAuth(window.firebaseApp);
-const db = getFirestore(window.firebaseApp);
-
-let authorized = false;
-
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    getDoc(doc(db, 'users', user.uid)).then(snap => {
-      if (snap.exists() && (snap.data().role === 'Admin' || snap.data().role === 'Staff')) {
-        authorized = true;
-        document.getElementById('startBtn').disabled = false;
-        log('<span style="color:green">Authenticated successfully — ready to import.</span>');
-      } else {
-        log('<span style="color:red">Access denied: Admin or Staff role required.</span>');
-      }
-    }).catch(() => {
-      log('<span style="color:red">Could not verify credentials.</span>');
-    });
-  } else {
-    log('<span style="color:red">Not authenticated. Please log in first.</span>');
-    document.getElementById('startBtn').disabled = true;
-  }
-});
+const API_BASE = '/api';
 
 function log(msg) {
   const logEl = document.getElementById('log');
@@ -31,140 +6,103 @@ function log(msg) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-document.getElementById('startBtn').addEventListener('click', async () => {
-  if (!authorized) {
-    log('<span style="color:red">Unauthorized. Admin/Staff login required.</span>');
+async function waitForAuth() {
+  if (window._authReady) await window._authReady;
+  const user = window.HMS ? window.HMS.getUser() : null;
+  if (!user || (user.role !== 'Admin' && user.role !== 'Staff')) {
+    log('<span style="color:red">Access denied: Admin or Staff role required.</span>');
+    return false;
+  }
+  return true;
+}
+
+function getToken() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem('hms_session') || 'null');
+    return s ? s.token : null;
+  } catch { return null; }
+}
+
+async function apiRequest(endpoint, options = {}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const btn = document.getElementById('startBtn');
+  const fileInput = document.getElementById('fileInput');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+
+  const authed = await waitForAuth();
+  if (authed) {
+    btn.disabled = false;
+    btn.textContent = 'Start Import';
+    log('<span style="color:green">Authenticated — ready to import.</span>');
+  } else {
+    btn.textContent = 'Access Denied';
     return;
   }
 
-  const btn = document.getElementById('startBtn');
-  btn.disabled = true;
-  btn.textContent = "Importing... Please wait";
-  document.getElementById('progressWrap').style.display = 'block';
+  btn.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) {
+      log('<span style="color:red">Please select a .xlsx file first.</span>');
+      return;
+    }
 
-  log('Fetching Patients.xlsx...');
-  try {
-    const response = await fetch('Patients.xlsx');
-    if (!response.ok) throw new Error('Could not find Patients.xlsx in the public folder');
-    const arrayBuffer = await response.arrayBuffer();
+    btn.disabled = true;
+    btn.textContent = 'Importing... Please wait';
+    progressWrap.style.display = 'block';
 
-    log('Parsing Excel...');
-    const data = new Uint8Array(arrayBuffer);
-    const workbook = XLSX.read(data, { type: 'array' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json(worksheet);
+    log(`Reading ${file.name}...`);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
 
-    log(`Parsed ${rawRows.length} rows successfully.`);
-    await uploadToFirestore(rawRows);
-  } catch (error) {
-    log(`<span style="color:red">Error: ${error.message}</span>`);
-    btn.disabled = false;
-    btn.textContent = "Retry Import";
+      log('Parsing Excel...');
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json(worksheet);
+
+      log(`Parsed ${rawRows.length} rows. Importing via API...`);
+
+      let imported = 0;
+      const batchSize = 50;
+      for (let i = 0; i < rawRows.length; i += batchSize) {
+        const batch = rawRows.slice(i, i + batchSize);
+        await apiRequest('/patients/bulk', {
+          method: 'POST',
+          body: { patients: batch }
+        });
+        imported += batch.length;
+        const pct = Math.round((imported / rawRows.length) * 100);
+        progressFill.style.width = `${pct}%`;
+        log(`Imported ${imported}/${rawRows.length} (${pct}%)`);
+      }
+
+      log('<span style="color:green"><b>Import Complete!</b></span>');
+      btn.textContent = 'Import Completed';
+    } catch (error) {
+      log(`<span style="color:red">Error: ${error.message}</span>`);
+      btn.disabled = false;
+      btn.textContent = 'Retry Import';
+    }
+  });
+
+  if (typeof XLSX === 'undefined') {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    document.head.appendChild(script);
   }
 });
-
-async function uploadToFirestore(rows) {
-  const BATCH_SIZE = 450;
-  let batches = [];
-  let currentBatch = writeBatch(db);
-  let operationCounter = 0;
-
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    
-    const name = row['Name'] ? String(row['Name']).trim() : '';
-    if (!name) continue;
-
-    // Split Name into first name and last name
-    const nameParts = name.split(/\s+/);
-    const fname = nameParts[0] || '';
-    const lname = nameParts.slice(1).join(' ') || 'Patient';
-
-    // Parse date of birth if possible, otherwise construct from age
-    const age = parseInt(row['Age']) || 0;
-    let dobStr = '';
-    if (age > 0) {
-      const birthYear = new Date().getFullYear() - age;
-      dobStr = `${birthYear}-01-01`;
-    }
-
-    // Map Category to Admission Type / type
-    const category = row['Category'] ? String(row['Category']).trim().toLowerCase() : '';
-    const type = (category === 'admitted' || category === 'inpatient') ? 'admitted' : 'outpatient';
-
-    // Map Date to lastVisit (DD-MM-YYYY to YYYY-MM-DD)
-    let lastVisit = new Date().toISOString().slice(0, 10);
-    if (row['Date']) {
-      const parts = String(row['Date']).split('-');
-      if (parts.length === 3) {
-        lastVisit = `${parts[2]}-${parts[1]}-${parts[0]}`;
-      }
-    }
-
-    // Consolidated notes
-    let notesArr = [];
-    if (row['Remarks']) notesArr.push(`Remarks: ${row['Remarks']}`);
-    if (row['Remark ']) notesArr.push(`Notes: ${row['Remark ']}`);
-    if (row['Diabetic Dtls']) notesArr.push(`Diabetic Details: ${row['Diabetic Dtls']}`);
-    if (row['Allergy']) notesArr.push(`Allergies: ${row['Allergy']}`);
-    if (row['BP'] && row['BP'] !== 0 && row['BP'] !== '0') notesArr.push(`BP: ${row['BP']}`);
-    if (row['Temprature'] && row['Temprature'] !== 0 && row['Temprature'] !== '0') notesArr.push(`Temp: ${row['Temprature']}°F`);
-    if (row['Place']) notesArr.push(`Place: ${row['Place']}`);
-    if (row['Doctor']) notesArr.push(`Doctor: ${row['Doctor']}`);
-    if (row['Hosp. OP No']) notesArr.push(`OP No: ${row['Hosp. OP No']}`);
-    const notes = notesArr.join('\n');
-
-    // Default status to stable, or mapping if present
-    const statusVal = row['Status'] ? String(row['Status']).trim().toLowerCase() : 'stable';
-    const status = ['stable', 'recovering', 'critical'].includes(statusVal) ? statusVal : 'stable';
-
-    const patient = {
-      fname: fname,
-      lname: lname,
-      contact: row['Phone'] ? String(row['Phone']).trim() : 'Unknown',
-      email: row['Email'] ? String(row['Email']).trim() : '',
-      dept: row['Department'] ? String(row['Department']).trim() : 'General Surgery',
-      type: type,
-      blood: row['Blood Group'] ? String(row['Blood Group']).trim() : 'Unknown',
-      notes: notes,
-      status: status,
-      age: age,
-      dob: dobStr,
-      lastVisit: lastVisit,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    // Use custom ID from Hosp. OP No or let firestore generate it. Let's auto-generate doc ID.
-    const docRef = doc(collection(db, 'patients'));
-    currentBatch.set(docRef, patient);
-    operationCounter++;
-
-    if (operationCounter === BATCH_SIZE) {
-      batches.push(currentBatch);
-      currentBatch = writeBatch(db);
-      operationCounter = 0;
-    }
-  }
-
-  if (operationCounter > 0) {
-    batches.push(currentBatch);
-  }
-
-  log(`Prepared ${batches.length} batches. Starting upload...`);
-
-  for (let i = 0; i < batches.length; i++) {
-    try {
-      await batches[i].commit();
-      const progress = Math.round(((i + 1) / batches.length) * 100);
-      document.getElementById('progressFill').style.width = `${progress}%`;
-      log(`Committed batch ${i + 1} of ${batches.length} (${progress}%)`);
-    } catch (e) {
-      log(`<span style="color:red">Error on batch ${i+1}: ${e.message}</span>`);
-    }
-  }
-
-  log('<span style="color:green"><b>Import Complete!</b></span>');
-  document.getElementById('startBtn').textContent = "Import Completed";
-}

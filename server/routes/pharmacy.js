@@ -6,6 +6,7 @@ const ctrl = require('../controllers/pharmacyController');
 router.get('/inventory', authenticate, ctrl.getInventory);
 router.get('/inventory/:id', authenticate, ctrl.getInventoryItem);
 router.post('/inventory', authenticate, ctrl.addInventory);
+router.post('/inventory/bulk', authenticate, authorize('Admin', 'Pharmacist'), ctrl.bulkImportInventory);
 router.put('/inventory/:id', authenticate, ctrl.updateInventory);
 router.delete('/inventory/:id', authenticate, authorize('Admin', 'Pharmacist'), ctrl.deleteInventory);
 router.get('/prescriptions', authenticate, ctrl.getPrescriptions);

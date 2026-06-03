@@ -291,7 +291,7 @@ async function loadPatients() {
   const tbody = document.getElementById('patientTableBody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--on-surface-var)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px;color:var(--outline-var)">hourglass_empty</span>Loading patients...</td></tr>';
   try {
-    const result = await window.API.getPatients({ limit: 1000 });
+    const result = await window.API.getPatients({ limit: 20000 });
     allPatients = result.data.map(p => ({
       ...p,
       blood_group: p.blood_group || p.blood || 'Unknown',
