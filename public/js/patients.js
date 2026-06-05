@@ -9,6 +9,7 @@ const ROWS_PER_PAGE = 10;
 let activeFilter = 'all';
 let sortCol = null, sortDir = 1;
 
+
 function renderTable() {
   const tbody = document.getElementById('patientTableBody');
   if (!tbody) return;
@@ -21,7 +22,7 @@ function renderTable() {
   tbody.innerHTML = pageItems.map(p => `
     <tr>
       <td><input type="checkbox" /></td>
-      <td><code style="font-size:.78rem;background:var(--surface-mid);padding:2px 6px;border-radius:4px;color:var(--primary-light)">${esc(p.id)}</code></td>
+      <td><code style="font-size:.78rem;background:var(--surface-mid);padding:2px 6px;border-radius:4px;color:var(--primary-light)">${esc(p.op_no || p.id)}</code></td>
       <td>
         <div class="patient-cell">
           <div class="mini-avatar">${esc((p.fname||'U')[0])}${esc((p.lname||'')[0])}</div>
@@ -106,7 +107,7 @@ function applyFilters() {
   const op = (document.getElementById('opFilter')?.value || '').toLowerCase();
 
   filteredPatients = allPatients.filter(p => {
-    const name = `${p.fname} ${p.lname} ${p.id} ${p.contact}`.toLowerCase();
+    const name = `${p.fname} ${p.lname} ${p.op_no || p.id} ${p.contact} ${p.doctor || ''}`.toLowerCase();
     if (search && !name.includes(search)) return false;
     if (dept && p.department !== dept) return false;
     if (status && p.status !== status) return false;
@@ -291,22 +292,92 @@ async function loadPatients() {
   const tbody = document.getElementById('patientTableBody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--on-surface-var)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px;color:var(--outline-var)">hourglass_empty</span>Loading patients...</td></tr>';
   try {
-    const result = await window.API.getPatients({ limit: 20000 });
-    allPatients = result.data.map(p => ({
-      ...p,
-      blood_group: p.blood_group || p.blood || 'Unknown',
-      department: p.department || p.dept || '',
-      patient_type: p.patient_type || p.type || 'Outpatient',
-      last_visit: p.last_visit || p.lastVisit || ''
-    }));
+    const result = await window.API.getPatients({ limit: 10000 });
+    allPatients = result.data.map(p => {
+      // Normalise field names: handle bulk-imported records (Name, Phone, Sex, etc.)
+      // AND newly-created records (fname, lname, contact, etc.)
+
+      // --- Name ---
+      let fname = p.fname || p.FirstName || '';
+      let lname  = p.lname  || p.LastName  || '';
+      if (!fname && !lname) {
+        const raw = p.Name || p.name || '';
+        const parts = String(raw).trim().split(/\s+/);
+        fname = parts[0] || '';
+        lname  = parts.slice(1).join(' ');
+      }
+
+      // --- Contact ---
+      const contact = p.contact || p.Phone || p.phone || p.mobile || p.Mobile || '';
+
+      // --- Department ---
+      const department = p.department || p.dept || p.Department || '';
+
+      // --- Blood group ---
+      const blood_group = p.blood_group || p.blood || p.Blood ||
+                          p['Blood Group'] || p.BloodGroup || 'Unknown';
+
+      // --- Patient type ---
+      const patient_type = p.patient_type || p.type || p.Type || 'Outpatient';
+
+      // --- Status --- (imported records may have no status)
+      const status = p.status || p.Status || 'stable';
+
+      // --- Last visit ---
+      const last_visit = p.last_visit || p.lastVisit || p['Last Visit'] ||
+                         p.LastVisit || p.date || '';
+
+      // --- Age ---
+      let age = p.age || p.Age || '';
+      if (!age && (p.dob || p.DOB)) {
+        const dob = new Date(p.dob || p.DOB);
+        if (!isNaN(dob.getTime()))
+          age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
+      }
+
+      // --- Gender / Sex ---
+      const gender = p.gender || p.Gender || p.Sex || p.sex || '';
+
+      // --- OP / Patient ID displayed in table ---
+      const op_no = p.op_no || p['Hosp. OP No'] || p['OP No'] ||
+                    p['ID. NO'] || p['ID'] || p.op || '';
+
+      // --- Doctor ---
+      const doctor = p.doctor || p.Doctor || p.doctor_name || '';
+
+      // --- Email ---
+      const email = p.email || p.Email || '';
+
+      return {
+        ...p,
+        fname,
+        lname,
+        contact,
+        department,
+        blood_group,
+        patient_type,
+        status,
+        last_visit,
+        age,
+        gender,
+        op_no,
+        doctor,
+        email
+      };
+    });
     window.allPatients = allPatients;
   } catch (e) {
     console.error('Failed to load patients:', e);
+    const errMsg = e && e.message ? e.message : String(e);
+    if (typeof toast === 'function') toast('Could not load patients: ' + errMsg, 'error');
+    const tbody2 = document.getElementById('patientTableBody');
+    if (tbody2) tbody2.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--error,#ef4444)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px">error_outline</span>Failed to load: ${errMsg}<br><button class="btn-secondary" style="margin-top:12px" onclick="loadPatients()">Retry</button></td></tr>`;
     allPatients = [];
     window.allPatients = allPatients;
   }
   applyFilters();
 }
+window.loadPatients = loadPatients;
 
 async function submitAddPatient(e) {
   e.preventDefault();
@@ -342,5 +413,22 @@ async function submitAddPatient(e) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  loadPatients();
+  // Wait for Firebase Auth to establish the session before querying Firestore.
+  // Without this, Firestore rules reject the read (request.auth is null)
+  // because the auth token hasn't been restored yet from the previous session.
+  function doLoad() {
+    loadPatients();
+  }
+  if (window._authReady) {
+    window._authReady.then(doLoad).catch(doLoad);
+  } else {
+    // _authReady not yet set — wait briefly then try
+    const poll = setInterval(() => {
+      if (window._authReady !== undefined) {
+        clearInterval(poll);
+        window._authReady.then(doLoad).catch(doLoad);
+      }
+    }, 50);
+    setTimeout(() => { clearInterval(poll); doLoad(); }, 3000);
+  }
 });

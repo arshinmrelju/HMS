@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /* --- Portal Guard --- */
 (function initPortalGuard() {
@@ -36,23 +36,20 @@ function ensureHMS() {
       setUser(user) { sessionStorage.setItem('hms_session', JSON.stringify(user)); },
       logout() {
         sessionStorage.removeItem('hms_session');
-        if (window.firebaseAuth) {
-          import('https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js')
-            .then(m => m.signOut(window.firebaseAuth)).catch(() => {});
-        }
-        location.href = '/';
+        if (window.HMS_AUTH) window.HMS_AUTH.logout();
+        else location.href = '/';
       },
       requireAuth() {
-        const user = this.getUser();
+        var user = this.getUser();
         if (user) return user;
-        const tryRedirect = () => {
+        var tryRedirect = function () {
           if (!this.getUser()) location.href = '/';
         };
         if (window._authReady === undefined) {
-          const poll = setInterval(() => {
+          var poll = setInterval(function () {
             if (window._authReady !== undefined) { clearInterval(poll); window._authReady.then(tryRedirect); }
           }, 50);
-          setTimeout(() => { clearInterval(poll); tryRedirect(); }, 3000);
+          setTimeout(function () { clearInterval(poll); tryRedirect(); }, 3000);
         } else {
           window._authReady.then(tryRedirect);
         }
@@ -238,7 +235,7 @@ function initUserDisplay() {
   const topbarAvatarEl = document.getElementById('topbarAvatar');
   const initials = (user.name || 'User').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   if (nameEl) nameEl.textContent = user.name || 'User';
-  if (roleEl) roleEl.textContent = user.title ? `${user.title} · ${user.role}` : user.role;
+  if (roleEl) roleEl.textContent = user.title ? `${user.title} Â· ${user.role}` : user.role;
   if (avatarEl) avatarEl.textContent = initials;
   if (topbarAvatarEl) topbarAvatarEl.textContent = initials;
 
@@ -453,3 +450,4 @@ document.addEventListener('DOMContentLoaded', function() {
     if (patientSearch) { patientSearch.value = searchQ; patientSearch.dispatchEvent(new Event('input')); }
   }
 });
+

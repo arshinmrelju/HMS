@@ -1,5 +1,3 @@
-const API_BASE = '/api';
-
 function log(msg) {
   const logEl = document.getElementById('log');
   logEl.innerHTML += `<div>${msg}</div>`;
@@ -14,27 +12,6 @@ async function waitForAuth() {
     return false;
   }
   return true;
-}
-
-function getToken() {
-  try {
-    const s = JSON.parse(sessionStorage.getItem('hms_session') || 'null');
-    return s ? s.token : null;
-  } catch { return null; }
-}
-
-async function apiRequest(endpoint, options = {}) {
-  const token = getToken();
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
-  return data;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -74,16 +51,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         skipEmptyLines: true,
         complete: async function(results) {
           const data = results.data;
-          log(`Parsed ${data.length} rows. Importing via API...`);
+          log(`Parsed ${data.length} rows. Importing via Firestore...`);
+
+          const db = firebase.firestore();
+          const user = window._currentFirebaseUser;
+          const ts = firebase.firestore.FieldValue.serverTimestamp;
 
           let imported = 0;
           const batchSize = 50;
           for (let i = 0; i < data.length; i += batchSize) {
             const batch = data.slice(i, i + batchSize);
-            await apiRequest('/pharmacy/inventory/bulk', {
-              method: 'POST',
-              body: { items: batch }
+            const fbBatch = db.batch();
+            batch.forEach(row => {
+              const ref = db.collection('inventory').doc();
+              fbBatch.set(ref, {
+                ...row,
+                created_by: user ? user.uid : null,
+                created_at: ts(),
+                updated_at: ts()
+              });
             });
+            await fbBatch.commit();
             imported += batch.length;
             const pct = Math.round((imported / data.length) * 100);
             progressFill.style.width = `${pct}%`;

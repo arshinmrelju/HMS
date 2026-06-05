@@ -13,6 +13,8 @@ scratch/
 
 # Firebase
 .firebase/
+wellnessplpy-firebase-adminsdk-fbsvc-*.json
+
 
 # Build
 dist/

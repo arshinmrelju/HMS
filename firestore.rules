@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() { return request.auth != null; }
+
+    function role() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+
+    function isOneOf(roles) { return isAuth() && roles.hasAny([role()]); }
+
+    match /users/{uid} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin']);
+    }
+
+    match /roles/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin']);
+    }
+
+    match /patients/{id} {
+      allow read: if isAuth();
+      allow create, update: if isOneOf(['Admin','Doctor','Staff','Receptionist']);
+      allow delete: if isOneOf(['Admin','Staff']);
+    }
+
+    match /appointments/{id} {
+      allow read: if isAuth();
+      allow create, update: if isOneOf(['Admin','Doctor','Staff','Receptionist']);
+      allow delete: if isOneOf(['Admin','Staff']);
+    }
+
+    match /prescriptions/{id} {
+      allow read: if isAuth();
+      allow create, update: if isOneOf(['Admin','Doctor','Pharmacist']);
+      allow delete: if isOneOf(['Admin']);
+      match /items/{iid} {
+        allow read: if isAuth();
+        allow write: if isOneOf(['Admin','Doctor','Pharmacist']);
+      }
+    }
+
+    match /inventory/{id} {
+      allow read: if isAuth();
+      allow create, update: if isOneOf(['Admin','Pharmacist','Staff']);
+      allow delete: if isOneOf(['Admin']);
+    }
+
+    match /lab_tests/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin']);
+    }
+
+    match /lab_orders/{id} {
+      allow read: if isAuth();
+      allow create: if isOneOf(['Admin','Doctor']);
+      allow update: if isOneOf(['Admin','Doctor','Lab Tech']);
+      allow delete: if isOneOf(['Admin']);
+      match /results/{rid} {
+        allow read: if isAuth();
+        allow write: if isOneOf(['Admin','Doctor','Lab Tech']);
+      }
+    }
+
+    match /transactions/{id} {
+      allow read: if isAuth();
+      allow create: if isOneOf(['Admin','Staff','Receptionist','Pharmacist']);
+      allow update: if isOneOf(['Admin','Staff']);
+      allow delete: if isOneOf(['Admin']);
+      match /items/{iid} {
+        allow read: if isAuth();
+        allow write: if isOneOf(['Admin','Staff','Receptionist']);
+      }
+    }
+
+    match /staff_schedules/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin','Staff']);
+    }
+
+    match /attendance/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin','Staff']);
+    }
+
+    match /head_of_staff/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin']);
+    }
+
+    match /purchase_requisitions/{id} {
+      allow read: if isAuth();
+      allow create: if isOneOf(['Admin','Pharmacist','Staff']);
+      allow update: if isOneOf(['Admin','Pharmacist']);
+      allow delete: if isOneOf(['Admin']);
+    }
+
+    match /audit_logs/{id} {
+      allow read: if isOneOf(['Admin']);
+      allow create: if isAuth();
+      allow delete: if isOneOf(['Admin']);
+    }
+
+    match /csv_export_history/{id} {
+      allow read: if isAuth();
+      allow create: if isOneOf(['Admin','Staff','Pharmacist']);
+      allow delete: if isOneOf(['Admin']);
+    }
+
+    match /wards/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin']);
+    }
+
+    match /bed_assignments/{id} {
+      allow read: if isAuth();
+      allow write: if isOneOf(['Admin','Staff','Receptionist']);
+    }
+
+    match /notifications/{id} {
+      allow read: if isAuth() && request.auth.uid == resource.data.user_id;
+      allow create: if isAuth();
+      allow delete: if isAuth();
+    }
+  }
+}

@@ -82,13 +82,13 @@ function inDateRange(dateField, fromId, toId) {
 }
 
 // ===== EXPORT FUNCTIONS =====
-async function exportCSV(type) {
+async function exportCSV(type, onlyBalance) {
   toast('Preparing ' + type + ' export...', 'info');
   try {
     var db = window.firebaseDb;
     var fs = window.firebaseFS;
     switch (type) {
-      case 'patients': await exportPatients(db, fs); break;
+      case 'patients': await exportPatients(db, fs, onlyBalance); break;
       case 'appointments': await exportAppointments(db, fs); break;
       case 'inventory': await exportInventory(db, fs); break;
       case 'lab': await exportLab(db, fs); break;
@@ -103,13 +103,15 @@ async function exportCSV(type) {
 }
 window.exportCSV = exportCSV;
 
-async function exportPatients(db, fs) {
+async function exportPatients(db, fs, onlyBalance) {
   var statusFilter = getFilterVal('filter-patients-status');
   var deptFilter = getFilterVal('filter-patients-dept');
   var snap = await fs.getDocs(fs.collection(db, 'patients'));
   var rows = [];
+  var idsToUpdate = [];
   snap.forEach(function(d) {
     var p = d.data();
+    if (onlyBalance && p.exported === true) return;
     if (statusFilter && p.status !== statusFilter) return;
     if (deptFilter && (p.department || p.dept) !== deptFilter) return;
     rows.push({
@@ -124,14 +126,56 @@ async function exportPatients(db, fs) {
       createdOn: dateInput(p.createdOn || p.createdAt),
       notes: (p.notes || '').replace(/\n/g, ' ')
     });
+    if (p.exported !== true) {
+      idsToUpdate.push(d.id);
+    }
   });
-  if (rows.length === 0) { toast('No patients match filters', 'warning'); return; }
+  if (rows.length === 0) { toast('No patients match filters/balance criteria', 'warning'); return; }
   var headers = ['First Name','Last Name','Phone','Email','Gender','DOB','Address','Blood Group','Department','Admission Type','Status','Assigned Doctor','UHID','ID','Last Visit','Created On','Notes'];
   var keyMap = {'First Name':'fname','Last Name':'lname','Phone':'contact','Email':'email','Gender':'gender','DOB':'dob','Address':'address','Blood Group':'bloodGroup','Department':'department','Admission Type':'admissionType','Status':'status','Assigned Doctor':'assignedDoctor','UHID':'uhid','ID':'id','Last Visit':'lastVisit','Created On':'createdOn','Notes':'notes'};
   var data = rows.map(function(r) { return headers.map(function(h) { return r[keyMap[h]]; }); });
-  downloadCSV('patients_export', headers, data);
+  
+  var filename = onlyBalance ? 'patients_balance_export' : 'patients_all_export';
+  downloadCSV(filename, headers, data);
   toast('Exported ' + rows.length + ' patients', 'success');
-  document.getElementById('metaPatients').textContent = rows.length + ' records exported';
+
+  if (idsToUpdate.length > 0) {
+    try {
+      var batch = db.batch();
+      var count = 0;
+      for (var i = 0; i < idsToUpdate.length; i++) {
+        var docRef = db.collection('patients').doc(idsToUpdate[i]);
+        batch.update(docRef, { exported: true });
+        count++;
+        if (count === 500) {
+          await batch.commit();
+          batch = db.batch();
+          count = 0;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (err) {
+      console.error('Failed to update patient export state:', err);
+      toast('Failed to mark patients as exported: ' + err.message, 'warning');
+    }
+  }
+
+  try {
+    var userSession = HMS.getUser();
+    await fs.addDoc(fs.collection(db, 'csv_export_history'), {
+      exportedAt: new Date().toISOString(),
+      exportedBy: userSession ? userSession.name || userSession.email : 'System',
+      count: rows.length,
+      type: onlyBalance ? 'Incremental' : 'Full'
+    });
+  } catch (err) {
+    console.error('Failed to write export history:', err);
+  }
+
+  await loadExportCounts();
+  await loadExportHistory();
 }
 
 async function exportAppointments(db, fs) {
@@ -312,7 +356,7 @@ async function exportAll() {
 
     try {
       switch (type) {
-        case 'patients': await exportPatients(db, fs); break;
+        case 'patients': await exportPatients(db, fs, false); break;
         case 'appointments': await exportAppointments(db, fs); break;
         case 'inventory': await exportInventory(db, fs); break;
         case 'lab': await exportLab(db, fs); break;
@@ -341,6 +385,7 @@ async function loadExportCounts() {
   try {
     var db = window.firebaseDb;
     var fs = window.firebaseFS;
+    if (!db || !fs) return;
     var collections = ['patients', 'appointments', 'inventory', 'lab_orders', 'transactions', 'doctors'];
     var ids = ['statPatients', 'statAppointments', 'statInventory', 'statLab', 'statTransactions', 'statDoctors'];
     var metaIds = ['metaPatients', 'metaAppointments', 'metaInventory', 'metaLab', 'metaTransactions', 'metaDoctors'];
@@ -350,17 +395,86 @@ async function loadExportCounts() {
       (function(idx) {
         fs.getDocs(fs.collection(db, collections[idx])).then(function(snap) {
           var count = snap.size;
-          var el = document.getElementById(ids[idx]);
-          if (el) el.textContent = count.toLocaleString();
-          var mel = document.getElementById(metaIds[idx]);
-          if (mel) mel.textContent = count + ' ' + names[idx] + ' available';
-        }).catch(function() {});
+          if (collections[idx] === 'patients') {
+            var exportedCount = 0;
+            snap.forEach(function(doc) {
+              if (doc.data().exported === true) {
+                exportedCount++;
+              }
+            });
+            var balanceCount = count - exportedCount;
+            
+            var el = document.getElementById('statPatients');
+            if (el) el.textContent = count.toLocaleString();
+            
+            var mel = document.getElementById('metaPatients');
+            if (mel) mel.textContent = 'Total: ' + count + ' | Exported: ' + exportedCount + ' | Balance: ' + balanceCount;
+            
+            var totalEl = document.getElementById('patientTotalCount');
+            if (totalEl) totalEl.textContent = count;
+            var expEl = document.getElementById('patientExportedCount');
+            if (expEl) expEl.textContent = exportedCount;
+            var balEl = document.getElementById('patientBalanceCount');
+            if (balEl) balEl.textContent = balanceCount;
+            
+            var balanceBtn = document.getElementById('btnExportBalance');
+            if (balanceBtn) {
+              balanceBtn.disabled = (balanceCount === 0);
+            }
+          } else {
+            var el = document.getElementById(ids[idx]);
+            if (el) el.textContent = count.toLocaleString();
+            var mel = document.getElementById(metaIds[idx]);
+            if (mel) mel.textContent = count + ' ' + names[idx] + ' available';
+          }
+        }).catch(function(e) {
+          console.warn('Failed to load count for ' + collections[idx], e);
+        });
       })(i);
     }
   } catch (e) {
     console.warn('Failed to load counts:', e);
   }
 }
+
+// ===== LOAD EXPORT HISTORY =====
+async function loadExportHistory() {
+  try {
+    var db = window.firebaseDb;
+    var fs = window.firebaseFS;
+    if (!db || !fs) return;
+    
+    var historyContainer = document.getElementById('historyTableBody');
+    if (!historyContainer) return;
+    
+    var q = fs.query(fs.collection(db, 'csv_export_history'), fs.orderBy('exportedAt', 'desc'), fs.limit(10));
+    var snap = await fs.getDocs(q);
+    
+    if (snap.empty) {
+      historyContainer.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--on-surface-var);">No export history found.</td></tr>';
+      return;
+    }
+    
+    var html = '';
+    snap.forEach(function(d) {
+      var h = d.data();
+      var dateStr = formatDateTime(h.exportedAt);
+      var typeBadge = h.type === 'Incremental' 
+        ? '<span class="badge-status available">Incremental</span>' 
+        : '<span class="badge-status busy">Full</span>';
+      html += '<tr>' +
+        '<td style="padding: 10px 8px;">' + window.esc(dateStr) + '</td>' +
+        '<td style="padding: 10px 8px;">' + window.esc(h.exportedBy || '—') + '</td>' +
+        '<td style="padding: 10px 8px;">' + typeBadge + '</td>' +
+        '<td style="padding: 10px 8px;"><strong>' + window.esc(h.count || 0) + '</strong></td>' +
+        '</tr>';
+    });
+    historyContainer.innerHTML = html;
+  } catch (err) {
+    console.error('Failed to load export history:', err);
+  }
+}
+window.loadExportHistory = loadExportHistory;
 
 document.addEventListener('DOMContentLoaded', async function() {
   if (window._authReady) await window._authReady;
@@ -373,4 +487,5 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   loadExportCounts();
+  loadExportHistory();
 });

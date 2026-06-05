@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const EXPECTED_ROLE = document.body.getAttribute('data-expected-role') || null;
 
@@ -18,7 +18,7 @@ document.getElementById('forgotPwLink')?.addEventListener('click', async (e) => 
     return;
   }
   try {
-    await window.sendFirebasePasswordReset(email);
+    await firebase.auth().sendPasswordResetEmail(email);
     alert('Password reset email sent. Check your inbox (and spam folder).');
   } catch (err) {
     alert(err.message || 'Failed to send reset email. Contact your administrator.');
@@ -111,3 +111,4 @@ document.head.appendChild(style);
     } catch (_) { }
   }
 })();
+
