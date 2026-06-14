@@ -101,10 +101,15 @@ function clearOpdQueueFilter() {
 }
 
 /* --- Check In by Token (quick action from list) --- */
-function checkInByToken(token) {
+async function checkInByToken(token) {
   const patient = OPD_QUEUE.find(p => p.token === token);
   if (patient) {
     patient.status = 'checked-in';
+    try {
+      await window.API.updateAppointment(patient.id, { status: 'checked-in' });
+    } catch (e) {
+      addConsoleLog('WARN', 'Could not update check-in status: ' + e.message);
+    }
     renderOpdQueue();
     toast(`${patient.name} checked in successfully!`, 'success', 'how_to_reg');
   }
@@ -143,7 +148,11 @@ function toggleBed(ward, num) {
   if (!bed) return;
   const cycle = { available: 'occupied', occupied: 'reserved', reserved: 'maintenance', maintenance: 'available' };
   bed.status = cycle[bed.status] || 'available';
+  if (window.saveLocalWards) {
+    window.saveLocalWards(WARDS);
+  }
   renderBedGrid(ward);
+  updateStats();
   toast(`Bed ${num}: Status → ${bed.status}`, 'info', 'hotel');
 }
 
@@ -174,36 +183,210 @@ function renderDoctorSchedule() {
   `).join('');
 }
 
+/* --- Patient Check-In Autocomplete Helpers --- */
+function patientName(p) {
+  return String(p.fname || p.FirstName || p.Name || p.name || '');
+}
+function patientLname(p) {
+  return String(p.lname || p.LastName || '');
+}
+function patientContact(p) {
+  return String(p.contact || p.Phone || p.phone || p.mobile || p.Mobile || '');
+}
+function patientAge(p) {
+  return String(p.age || p.Age || '');
+}
+function patientGender(p) {
+  return String(p.gender || p.Gender || p.Sex || p.sex || '');
+}
+function patientFullName(p) {
+  var f = patientName(p);
+  var l = patientLname(p);
+  if (!f && !l) {
+    var raw = p.Name || p.name || '';
+    var parts = String(raw).trim().split(/\s+/);
+    f = parts[0] || '';
+    l = parts.slice(1).join(' ');
+  }
+  return (f + ' ' + l).trim();
+}
+
+/* --- Patient Check-In Autocomplete --- */
+var ciSelectedPatient = null;
+
+function initCheckinAutocomplete() {
+  var input = document.getElementById('ciPatientSearch');
+  var dropdown = document.getElementById('ciPatientDropdown');
+  if (!input || !dropdown) return;
+
+  function renderOptions(query) {
+    var q = (query || '').toLowerCase();
+    var patients = window.allPatients || [];
+    var filtered = patients.filter(function(p) {
+      return patientFullName(p).toLowerCase().includes(q) || patientContact(p).toLowerCase().includes(q);
+    });
+    if (filtered.length === 0) {
+      dropdown.innerHTML = '<div class="autocomplete-item" style="color:var(--on-surface-var);cursor:default;">No patients found</div>';
+      document.getElementById('ciPatientNotFound').style.display = 'block';
+      return;
+    }
+    document.getElementById('ciPatientNotFound').style.display = 'none';
+    dropdown.innerHTML = filtered.map(function(p) {
+      var f = patientName(p);
+      var l = patientLname(p);
+      if (!f && !l) {
+        var raw = p.Name || p.name || '';
+        var parts = String(raw).trim().split(/\s+/);
+        f = parts[0] || '';
+        l = parts.slice(1).join(' ');
+      }
+      var initials = ((f || '')[0] || '') + ((l || '')[0] || '');
+      var meta = [];
+      var age = patientAge(p);
+      var gender = patientGender(p);
+      if (age) meta.push(age + 'y');
+      if (gender) meta.push(gender);
+      var contact = patientContact(p);
+      if (contact) meta.push(contact);
+      return '<div class="autocomplete-item" data-id="' + p.id + '" onclick="selectCheckinPatient(\'' + p.id + '\')">' +
+        '<div class="ac-avatar">' + esc(initials) + '</div>' +
+        '<div class="ac-info">' +
+          '<span class="ac-name">' + esc(f) + ' ' + esc(l) + '</span>' +
+          '<span class="ac-phone">' + esc(meta.join(' · ')) + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  input.addEventListener('focus', function() { renderOptions(input.value); dropdown.classList.add('active'); });
+  input.addEventListener('input', function() {
+    ciSelectedPatient = null;
+    document.getElementById('ciPatientId').value = '';
+    document.getElementById('ciPatientInfo').style.display = 'none';
+    renderOptions(input.value);
+    dropdown.classList.add('active');
+  });
+  document.addEventListener('click', function(e) {
+    var wrapper = document.getElementById('ciPatientAutocomplete');
+    if (wrapper && !wrapper.contains(e.target)) dropdown.classList.remove('active');
+  });
+
+  window.selectCheckinPatient = function(id) {
+    var patients = window.allPatients || [];
+    var p = patients.find(function(x) { return String(x.id) === String(id); });
+    if (!p) return;
+    ciSelectedPatient = p;
+    var f = patientName(p);
+    var l = patientLname(p);
+    if (!f && !l) {
+      var raw = p.Name || p.name || '';
+      var parts = String(raw).trim().split(/\s+/);
+      f = parts[0] || '';
+      l = parts.slice(1).join(' ');
+    }
+    document.getElementById('ciPatientId').value = p.id;
+    input.value = (f + ' ' + l).trim();
+    dropdown.classList.remove('active');
+    var initials = ((f || '')[0] || '') + ((l || '')[0] || '');
+    document.getElementById('ciPatientAvatar').textContent = initials;
+    document.getElementById('ciPatientNameDisplay').textContent = (f + ' ' + l).trim();
+    var meta = [];
+    var age = patientAge(p);
+    var gender = patientGender(p);
+    if (age) meta.push(age + ' yrs');
+    if (gender) meta.push(gender);
+    if (p.blood_group && p.blood_group !== 'Unknown') meta.push(p.blood_group);
+    if (p.op_no) meta.push('OP: ' + p.op_no);
+    document.getElementById('ciPatientMetaDisplay').textContent = meta.join(' · ');
+    document.getElementById('ciPatientInfo').style.display = 'block';
+    document.getElementById('ciPatientNotFound').style.display = 'none';
+  };
+}
+
+function openNewPatient() {
+  closeModal(null, 'checkInModal');
+  var searchQ = document.getElementById('ciPatientSearch')?.value.trim();
+  var target = 'patients.html' + (searchQ ? '?search=' + encodeURIComponent(searchQ) : '');
+  window.location.href = target;
+}
+
+/* --- Populate Doctor Dropdown in Check-In Modal --- */
+function populateDoctorDropdown() {
+  var sel = document.getElementById('ciDoctor');
+  if (!sel) return;
+
+  // Build options from loaded DOCTOR_SCHEDULE
+  var docs = DOCTOR_SCHEDULE.filter(function(d) { return d && d.name; });
+
+  if (docs.length === 0) {
+    // Fallback: try loading from API
+    window.API.getDoctors({ limit: 100 }).then(function(res) {
+      var list = (res && res.data) ? res.data : [];
+      sel.innerHTML = list.length
+        ? list.map(function(d) {
+            var name = d.name || d.doctor_name || d.firstName + ' ' + d.lastName || 'Unknown';
+            return '<option value="' + esc(d.id || name) + '">Dr. ' + esc(name) + '</option>';
+          }).join('')
+        : '<option value="unassigned">Unassigned / Walk-in</option>';
+    }).catch(function() {
+      sel.innerHTML = '<option value="unassigned">Unassigned / Walk-in</option>';
+    });
+    return;
+  }
+
+  sel.innerHTML = docs.map(function(d) {
+    return '<option value="' + esc(d.name) + '">' + esc(d.name) + ' – ' + esc(d.dept || 'General') + '</option>';
+  }).join('');
+}
+
+/* --- Open Check-In Modal --- */
+function openCheckInModal() {
+  openModal('checkInModal');
+  populateDoctorDropdown();
+  // Reset form state
+  var input = document.getElementById('ciPatientSearch');
+  if (input) input.value = '';
+  document.getElementById('ciPatientId').value = '';
+  document.getElementById('ciPatientInfo').style.display = 'none';
+  document.getElementById('ciPatientNotFound').style.display = 'none';
+  document.getElementById('ciComplaint').value = '';
+  ciSelectedPatient = null;
+  // Focus the search box
+  setTimeout(function() { if (input) input.focus(); }, 120);
+}
+
 /* --- Patient Check-In (from modal) --- */
 async function checkInPatient() {
-  const name = document.getElementById('ciName')?.value.trim();
-  const age = document.getElementById('ciAge')?.value.trim() || 'N/A';
-  const doctor = document.getElementById('ciDoctor')?.value;
-  const priority = document.getElementById('ciPriority')?.value || 'waiting';
-  const complaint = document.getElementById('ciComplaint')?.value.trim() || 'Not specified';
+  var p = ciSelectedPatient;
+  if (!p) {
+    toast('Please search and select a patient from the registry, or register a new one.', 'warning');
+    return;
+  }
+  var doctor = document.getElementById('ciDoctor')?.value;
+  var priority = document.getElementById('ciPriority')?.value || 'waiting';
+  var complaint = document.getElementById('ciComplaint')?.value.trim() || 'Not specified';
 
-  if (!name) { toast('Please enter the patient name.', 'warning'); return; }
-
-  const nextToken = OPD_QUEUE.length + 1;
-  const record = {
+  var nextToken = OPD_QUEUE.length + 1;
+  var now = new Date();
+  var record = {
     token: nextToken,
-    name,
-    age,
-    doctor,
-    complaint,
+    id: p.id,
+    name: patientFullName(p),
+    age: p.age || 'N/A',
+    doctor: doctor,
+    complaint: complaint,
     status: priority,
     type: 'OPD',
-    time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: new Date().toISOString()
+    time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+    timestamp: now.toISOString()
   };
   OPD_QUEUE.push(record);
 
-  // Persist via API
   try {
     await window.API.createAppointment({
-      patient_id: name,
+      patient_id: p.id,
       doctor_id: doctor,
-      appointment_date: new Date().toISOString().split('T')[0],
+      appointment_date: now.toISOString().split('T')[0],
       appointment_time: record.time,
       type: 'OPD',
       status: priority,
@@ -216,13 +399,13 @@ async function checkInPatient() {
   renderOpdQueue();
   closeModal(null, 'checkInModal');
 
-  // Clear form
-  ['ciName', 'ciAge', 'ciComplaint'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
+  ciSelectedPatient = null;
+  document.getElementById('ciPatientSearch').value = '';
+  document.getElementById('ciPatientId').value = '';
+  document.getElementById('ciPatientInfo').style.display = 'none';
+  document.getElementById('ciComplaint').value = '';
 
-  toast(`Token #${nextToken} issued to ${name}!`, 'success', 'how_to_reg');
+  toast('Token #' + nextToken + ' issued to ' + record.name + '!', 'success', 'how_to_reg');
 }
 
 /* --- Book Appointment --- */
@@ -259,6 +442,9 @@ async function bookAppointment(e) {
   // Set today as default
   const dateEl = document.getElementById('apptDate');
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+
+  // Refresh stats immediately
+  updateStats();
 }
 
 /* --- Live Clock --- */
@@ -287,16 +473,37 @@ async function loadOpdQueueFromFirestore() {
     const response = await window.API.getAppointments({ limit: 50 });
     if (!response.success) return;
     const appointments = response.data || [];
+    var patientLookup = window.allPatients || [];
     OPD_QUEUE = appointments
       .filter(a => a.type === 'OPD')
       .map((a, i) => {
-        const token = a.token || a.id || i + 1;
+        const tokenNum = a.token || i + 1;
+        var name = a.patient_name || a.patientName || '';
+        var age = a.patientAge || a.age || '';
+        var doctor = a.doctor || a.doctor_name || a.doctor_id || '';
+        if ((!name || !doctor) && a.patient_id) {
+          var match = patientLookup.find(function(p) { return String(p.id) === String(a.patient_id); });
+          if (!match) {
+            match = patientLookup.find(function(p) { return patientFullName(p).toLowerCase() === String(a.patient_id).toLowerCase(); });
+          }
+          if (!match) {
+            match = patientLookup.find(function(p) { return (p.contact || '').replace(/\s/g,'') === String(a.patient_id).replace(/\s/g,''); });
+          }
+          if (match) {
+            if (!name) name = patientFullName(match);
+            if (!age) age = patientAge(match);
+            if (!doctor) doctor = match.doctor || match.doctor_name || '';
+          }
+        }
+        if (!name) name = 'Walk-in #' + tokenNum;
+        if (!age) age = 'N/A';
+        if (!doctor) doctor = 'Unassigned';
         return {
-          id: a.id || token,
-          token,
-          name: a.patientName || a.patient_id || 'Unknown',
-          age: a.patientAge || a.age || 'N/A',
-          doctor: a.doctor || a.doctor_id || 'Unassigned',
+          id: a.id || tokenNum,
+          token: tokenNum,
+          name: name,
+          age: age,
+          doctor: doctor,
           complaint: a.reason || a.complaint || '—',
           status: a.status || 'waiting',
           time: a.appointment_time || a.time || '—',
@@ -333,24 +540,90 @@ async function loadDoctorScheduleFromFirestore() {
 
 async function loadWardsFromFirestore() {
   try {
-    const fs = window.firebaseDb && window.firebaseFS;
-    if (!fs) return;
-    const snap = await fs.getDocs(fs.collection(window.firebaseDb, 'wards'));
-    snap.forEach(d => {
-      const data = d.data();
-      WARDS[data.name || d.id] = (data.beds || []).map(b => ({
-        num: b.num || b.number || b,
-        status: b.status || 'available'
-      }));
-    });
+    const result = await window.API.getWards();
+    if (result && result.data) {
+      Object.assign(WARDS, result.data);
+    }
   } catch (e) {
-    addConsoleLog('WARN', 'Could not load wards from Firestore: ' + e.message);
+    addConsoleLog('WARN', 'Could not load wards: ' + e.message);
+  }
+}
+
+/* --- Load Patients for Autocomplete (paginated, up to 50 for autocomplete) --- */
+async function ensurePatientsLoaded() {
+  if (window.allPatients && window.allPatients.length > 0) return;
+  try {
+    // Load up to 50 patients for autocomplete; enough for a small clinic
+    var result = await window.API.getPatients({ limit: 50 });
+    if (result && result.data) {
+      window.allPatients = result.data;
+    }
+  } catch (e) {
+    console.warn('Could not load patients for autocomplete:', e);
+  }
+}
+
+/* --- Update KPI Stat Cards --- */
+function updateStats() {
+  var todayStr = new Date().toISOString().split('T')[0];
+  var todayOPD = OPD_QUEUE.filter(function(p) { return p.timestamp && p.timestamp.slice(0,10) === todayStr; });
+  
+  var opdTotalEl = document.querySelector('.stat-card[style*="--accent:#ea580c"] .stat-value');
+  if (opdTotalEl) {
+    if (window.animateCounter) window.animateCounter(opdTotalEl, todayOPD.length);
+    else opdTotalEl.textContent = todayOPD.length;
+  }
+
+  var waitingEl = document.querySelector('.stat-card[style*="--accent:#f59e0b"] .stat-value');
+  var waiting = todayOPD.filter(function(p) { return p.status === 'waiting' || p.status === 'urgent'; });
+  if (waitingEl) {
+    if (window.animateCounter) window.animateCounter(waitingEl, waiting.length);
+    else waitingEl.textContent = waiting.length;
+  }
+
+  var waitingDelta = document.querySelector('.stat-card[style*="--accent:#f59e0b"] .stat-delta');
+  if (waitingDelta) waitingDelta.innerHTML = '<span class="material-icons-round">hourglass_empty</span>' + waiting.length + ' waiting now';
+
+  var bedEl = document.querySelector('.stat-card[style*="--accent:#10b981"] .stat-value');
+  var bedDelta = document.querySelector('.stat-card[style*="--accent:#10b981"] .stat-delta');
+  var avail = 0;
+  var totalBeds = 0;
+  Object.keys(WARDS).forEach(function(w) {
+    (WARDS[w] || []).forEach(function(b) {
+      totalBeds++;
+      if (b.status === 'available') avail++;
+    });
+  });
+  if (bedEl) {
+    if (window.animateCounter) window.animateCounter(bedEl, avail);
+    else bedEl.textContent = avail;
+  }
+  if (bedDelta && totalBeds > 0) bedDelta.innerHTML = '<span class="material-icons-round">check</span>' + (totalBeds - avail) + '/' + totalBeds + ' occupied';
+
+  var todayApptsEl = document.querySelector('.stat-card[style*="--accent:#0284c7"] .stat-value');
+  if (todayApptsEl) {
+    window.API.getAppointments({ limit: 200 }).then(function(resp) {
+      if (resp && resp.data) {
+        var todayCount = resp.data.filter(function(a) { return a.appointment_date && a.appointment_date.slice(0,10) === todayStr; }).length;
+        if (window.animateCounter) window.animateCounter(todayApptsEl, todayCount);
+        else todayApptsEl.textContent = todayCount;
+        
+        var apptDelta = document.querySelector('.stat-card[style*="--accent:#0284c7"] .stat-delta');
+        if (apptDelta) apptDelta.innerHTML = '<span class="material-icons-round">event</span>' + todayCount + ' today';
+      }
+    }).catch(function() {});
   }
 }
 
 /* --- DOMContentLoaded --- */
 document.addEventListener('DOMContentLoaded', async () => {
+  await ensurePatientsLoaded();
   await Promise.all([loadOpdQueueFromFirestore(), loadDoctorScheduleFromFirestore(), loadWardsFromFirestore()]);
+  updateStats();
+
+  // Re-run stats after OPD queue is filtered
+  var origRender = renderOpdQueue;
+  renderOpdQueue = function() { origRender(); updateStats(); };
 
   const todayChip = document.querySelector(`#opdSmartFilter .sf-chip[onclick*="'today'"]`);
   if (todayChip) {
@@ -363,7 +636,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateClock();
   setInterval(updateClock, 1000);
 
-  // Set today's date as default for appointment form
-  const dateEl = document.getElementById('apptDate');
+  var dateEl = document.getElementById('apptDate');
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+
+  initCheckinAutocomplete();
 });

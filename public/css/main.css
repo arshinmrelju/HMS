@@ -352,21 +352,44 @@ select {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  /* allow dropdowns inside modals to overflow the overlay edges */
+  overflow: visible;
 }
 
 .modal-overlay.active {
   display: flex;
 }
 
-.modal {
+/* Shared card base – used by both .modal and .modal-card */
+.modal,
+.modal-card {
   width: 100%;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(13, 148, 136, 0.06);
+  animation: modalIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  /* allow the autocomplete dropdown to overflow outside the card */
+  overflow: visible;
+}
+
+.modal {
   max-width: 560px;
   max-height: 90vh;
   overflow-y: auto;
+  overflow-x: visible;
   padding: 28px;
-  animation: modalIn 0.25s ease;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+}
+
+.modal-card {
+  max-height: 90vh;
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: 28px;
 }
 
 .modal.wide-modal {
@@ -376,7 +399,7 @@ select {
 @keyframes modalIn {
   from {
     opacity: 0;
-    transform: scale(0.96) translateY(12px);
+    transform: scale(0.95) translateY(16px);
   }
 
   to {
@@ -385,31 +408,55 @@ select {
   }
 }
 
+/* modal-header/title/body/footer work on both .modal and .modal-card */
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1.5px solid var(--surface-mid);
 }
 
-.modal-header h2 {
+.modal-title {
   font-family: var(--font-head);
-  font-size: 1.3rem;
-  font-weight: 700;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--on-surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-header h2,
+.modal-header h3 {
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--on-surface);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .modal-close {
   background: var(--surface-low);
-  border: 1px solid var(--outline-var);
+  border: 1.5px solid var(--outline-var);
   border-radius: var(--radius-sm);
-  padding: 4px;
+  padding: 6px;
   display: flex;
   color: var(--on-surface-var);
   transition: all 0.15s;
+  cursor: pointer;
 }
 
 .modal-close:hover {
-  background: var(--surface-high);
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--accent-red);
 }
 
 .modal-form {
@@ -422,9 +469,9 @@ select {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: 12px;
   padding-top: 16px;
-  border-top: 1px solid var(--outline-var);
+  border-top: 1.5px solid var(--surface-mid);
 }
 
 /* --- Tables --- */
@@ -1115,25 +1162,37 @@ select {
   pointer-events: none;
 }
 
+/* Wrapper that gives the dropdown its absolute positioning context */
+.autocomplete-wrapper {
+  position: relative;
+  width: 100%;
+}
+
 .autocomplete-dropdown {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 4px);
   left: 0;
   width: 100%;
-  margin-top: 4px;
   background: var(--surface);
   border: 1.5px solid var(--outline-var);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  max-height: 240px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(13, 148, 136, 0.08);
+  max-height: 260px;
   overflow-y: auto;
-  z-index: 1001;
+  /* stack above all modal form controls */
+  z-index: 2000;
   display: none;
   flex-direction: column;
 }
 
 .autocomplete-dropdown.active {
   display: flex;
+  animation: dropdownIn 0.18s ease;
+}
+
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .autocomplete-item {

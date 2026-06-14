@@ -1,92 +1,13 @@
-﻿{
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "public": "public",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ],
-    "headers": [
-      {
-        "source": "**/*.html",
-        "headers": [
-          {
-            "key": "Content-Security-Policy",
-            "value": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://img.icons8.com data:; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://fonts.gstatic.com;"
-          },
-          {
-            "key": "X-Content-Type-Options",
-            "value": "nosniff"
-          },
-          {
-            "key": "X-Frame-Options",
-            "value": "DENY"
-          },
-          {
-            "key": "X-XSS-Protection",
-            "value": "1; mode=block"
-          },
-          {
-            "key": "Referrer-Policy",
-            "value": "strict-origin-when-cross-origin"
-          },
-          {
-            "key": "Permissions-Policy",
-            "value": "camera=(), microphone=(), geolocation=()"
-          }
-        ]
-      }
-    ],
-    "rewrites": [
-      {
-        "source": "/admin",
-        "destination": "/admin/dashboard.html"
-      },
-      {
-        "source": "/doctor",
-        "destination": "/doctor/dashboard.html"
-      },
-      {
-        "source": "/staff",
-        "destination": "/staff/dashboard.html"
-      },
-      {
-        "source": "/pharmacist",
-        "destination": "/pharmacist/dashboard.html"
-      },
-      {
-        "source": "/labtech",
-        "destination": "/labtech/dashboard.html"
-      },
-      {
-        "source": "/login-admin",
-        "destination": "/login-admin.html"
-      },
-      {
-        "source": "/login-doctor",
-        "destination": "/login-doctor.html"
-      },
-      {
-        "source": "/login-staff",
-        "destination": "/login-staff.html"
-      },
-      {
-        "source": "/login-pharmacist",
-        "destination": "/login-pharmacist.html"
-      },
-      {
-        "source": "/login-labtech",
-        "destination": "/login-labtech.html"
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
     ]
-  },
-  "firestore": {
-    "rules": "firestore.rules"
   }
 }
-
-

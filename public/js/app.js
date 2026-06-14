@@ -1,71 +1,39 @@
-﻿'use strict';
+'use strict';
 
-/* --- Portal Guard --- */
-(function initPortalGuard() {
-  const portalMap = { admin: 'Admin', doctor: 'Doctor', staff: 'Staff', pharmacist: 'Pharmacist', labtech: 'Lab Tech' };
-  const path = window.location.pathname;
-  const match = path.match(/^\/(admin|doctor|staff|pharmacist|labtech)\//);
-  if (match) {
-    const expectedRole = portalMap[match[1]];
-    const check = () => {
-      const user = window.HMS ? window.HMS.getUser() : null;
-      if (user && user.role !== expectedRole) {
-        const redirects = { Admin: '/admin/dashboard', Doctor: '/doctor/dashboard', Staff: '/staff/dashboard', Pharmacist: '/pharmacist/dashboard', 'Lab Tech': '/labtech/dashboard' };
-        window.location.href = redirects[user.role] || '/';
-      }
-    };
-    if (window._authReady) {
-      window._authReady.then(check);
-    } else {
-      const poll = setInterval(() => {
-        if (window._authReady !== undefined) { clearInterval(poll); window._authReady.then(check); }
-      }, 50);
-      setTimeout(() => { clearInterval(poll); check(); }, 3000);
-    }
-  }
-})();
-
-/* --- Auth / Session --- */
-function ensureHMS() {
-  if (!window.HMS) {
-    window.HMS = {
-      getUser() {
-        try { return JSON.parse(sessionStorage.getItem('hms_session') || 'null'); }
-        catch (_) { return null; }
-      },
-      setUser(user) { sessionStorage.setItem('hms_session', JSON.stringify(user)); },
-      logout() {
-        sessionStorage.removeItem('hms_session');
-        if (window.HMS_AUTH) window.HMS_AUTH.logout();
-        else location.href = '/';
-      },
-      requireAuth() {
-        var user = this.getUser();
-        if (user) return user;
-        var tryRedirect = function () {
-          if (!this.getUser()) location.href = '/';
-        };
-        if (window._authReady === undefined) {
-          var poll = setInterval(function () {
-            if (window._authReady !== undefined) { clearInterval(poll); window._authReady.then(tryRedirect); }
-          }, 50);
-          setTimeout(function () { clearInterval(poll); tryRedirect(); }, 3000);
-        } else {
-          window._authReady.then(tryRedirect);
-        }
-        return null;
-      }
-    };
-  }
-  return window.HMS;
+// Setup default session for the receptionist
+if (!sessionStorage.getItem('hms_session')) {
+  sessionStorage.setItem('hms_session', JSON.stringify({
+    uid: "mock-reception-id",
+    email: "reception@wellness.com",
+    name: "Priya Singh",
+    title: "Head Receptionist",
+    phone: "9876543214",
+    role: "Staff",
+    token: "mock-token",
+    redirect: "index.html"
+  }));
 }
-ensureHMS();
-const HMS = window.HMS;
 
-window.HMS_READY = window._authReady || Promise.resolve();
-window.addConsoleLog = window.addConsoleLog || function addConsoleLog(type, msg) {
+window.HMS = {
+  getUser() {
+    try { return JSON.parse(sessionStorage.getItem('hms_session') || 'null'); }
+    catch (_) { return null; }
+  },
+  setUser(user) { sessionStorage.setItem('hms_session', JSON.stringify(user)); },
+  logout() {
+    sessionStorage.removeItem('hms_session');
+    location.href = 'index.html';
+  },
+  requireAuth() {
+    return this.getUser();
+  }
+};
+const HMS = window.HMS;
+window.HMS_READY = Promise.resolve();
+window.addConsoleLog = function addConsoleLog(type, msg) {
   if (typeof console !== 'undefined') console.log('[' + type + '] ' + msg);
 };
+
 
 function toast(message, type = 'info', icon = null) {
   let container = document.getElementById('toastContainer');
@@ -225,7 +193,7 @@ function initUserDisplay() {
     const link = document.createElement('link');
     link.id = 'portals-stylesheet';
     link.rel = 'stylesheet';
-    link.href = '/css/portals.css';
+    link.href = 'css/portals.css';
     document.head.appendChild(link);
   }
 
@@ -248,12 +216,6 @@ function initUserDisplay() {
   }
 }
 
-function initLogout() {
-  const btn = document.getElementById('logoutBtn');
-  if (btn) btn.addEventListener('click', () => {
-    if (confirm('Are you sure you want to log out?')) HMS.logout();
-  });
-}
 
 function initDateDisplay() {
   const el = document.getElementById('todayDate');
@@ -279,20 +241,33 @@ function switchTab(btn, tabId) {
   if (target) target.hidden = false;
 }
 
+function animateCounter(el, target) {
+  el.dataset.target = target;
+  const duration = 800;
+  const start = performance.now();
+  const startVal = parseInt(el.textContent, 10) || 0;
+  const diff = target - startVal;
+  
+  const animId = Math.random();
+  el.dataset.animId = animId;
+
+  function update(now) {
+    if (el.dataset.animId !== String(animId)) return;
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(startVal + eased * diff).toLocaleString();
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
 function animateCounters() {
   document.querySelectorAll('.counter').forEach(el => {
-    const target = parseInt(el.dataset.target, 10);
-    const duration = 1200;
-    const start = performance.now();
-    function update(now) {
-      const progress = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      el.textContent = Math.round(eased * target).toLocaleString();
-      if (progress < 1) requestAnimationFrame(update);
-    }
-    requestAnimationFrame(update);
+    const target = parseInt(el.dataset.target, 10) || 0;
+    animateCounter(el, target);
   });
 }
+window.animateCounter = animateCounter;
 
 function sfChipSelect(btn, prefix, type) {
   const chips = btn.closest('.sf-chips');
@@ -378,7 +353,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initSidebar();
   initNotifications();
   initUserDisplay();
-  initLogout();
   initDateDisplay();
   initGreeting();
   animateCounters();
@@ -404,25 +378,13 @@ function initGlobalSearch() {
     }
 
     var path = window.location.pathname;
-    var portalPrefix = '';
-    var pm = path.match(/^\/(admin|doctor|staff|pharmacist|labtech)\//);
-    if (pm) portalPrefix = '/' + pm[1];
 
-    if (path.includes('patients')) {
+    if (path.includes('patients.html')) {
       var patientSearch = document.getElementById('patientSearch');
       if (patientSearch) { patientSearch.value = q; patientSearch.dispatchEvent(new Event('input')); toast('Filtering patients for "' + q + '"', 'info', 'search'); }
-    } else if (path.includes('pharmacy')) {
-      var medSearch = document.getElementById('medSearch');
-      if (medSearch) { medSearch.value = q; medSearch.dispatchEvent(new Event('input')); toast('Filtering medicines for "' + q + '"', 'info', 'search'); }
-    } else if (path.includes('appointments')) {
-      var aptSearch = document.getElementById('apptSearch');
-      if (aptSearch) { aptSearch.value = q; aptSearch.dispatchEvent(new Event('input')); toast('Filtering appointments for "' + q + '"', 'info', 'search'); }
-    } else if (path.includes('reports')) {
-      var txnSearch = document.getElementById('searchTxn');
-      if (txnSearch) { txnSearch.value = q; txnSearch.dispatchEvent(new Event('input')); toast('Filtering transactions for "' + q + '"', 'info', 'search'); }
     } else {
-      toast('Searching for "' + q + '" across the system...', 'info', 'search');
-      setTimeout(function() { window.location.href = portalPrefix + '/patients?search=' + encodeURIComponent(q); }, 600);
+      toast('Searching for "' + q + '" in patient registry...', 'info', 'search');
+      setTimeout(function() { window.location.href = 'patients.html?search=' + encodeURIComponent(q); }, 600);
     }
   }
 

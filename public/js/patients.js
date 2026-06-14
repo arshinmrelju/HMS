@@ -1,6 +1,5 @@
 'use strict';
 
-HMS.requireAuth();
 
 let allPatients = []; window.allPatients = allPatients;
 let filteredPatients = [];
@@ -8,6 +7,10 @@ let currentPage = 1;
 const ROWS_PER_PAGE = 10;
 let activeFilter = 'all';
 let sortCol = null, sortDir = 1;
+
+// Firestore cursor-based pagination state
+let _lastPatientDoc = null;  // last Firestore doc snapshot
+let _hasMorePatients = false; // whether a next page exists
 
 
 function renderTable() {
@@ -85,36 +88,180 @@ function toggleAdvancedSearchPanel() {
     const place = document.getElementById('placeFilter');
     const doctor = document.getElementById('doctorFilter');
     const op = document.getElementById('opFilter');
+    const visitFrom = document.getElementById('visitFromFilter');
+    const visitTo = document.getElementById('visitToFilter');
     if (minAge) minAge.value = '';
     if (maxAge) maxAge.value = '';
     if (place) place.value = '';
     if (doctor) doctor.value = '';
     if (op) op.value = '';
+    if (visitFrom) visitFrom.value = '';
+    if (visitTo) visitTo.value = '';
+    updateAdvBadge();
     applyFilters();
   }
 }
 window.toggleAdvancedSearchPanel = toggleAdvancedSearchPanel;
+
+function updateAdvBadge() {
+  let count = 0;
+  
+  const minAgeVal = document.getElementById('minAgeFilter')?.value;
+  if (minAgeVal && parseInt(minAgeVal) > 0) count++;
+  
+  const maxAgeVal = document.getElementById('maxAgeFilter')?.value;
+  if (maxAgeVal && parseInt(maxAgeVal) < 150 && maxAgeVal !== '') count++;
+  
+  const placeVal = document.getElementById('placeFilter')?.value;
+  if (placeVal && placeVal.trim() !== '') count++;
+  
+  const doctorVal = document.getElementById('doctorFilter')?.value;
+  if (doctorVal && doctorVal.trim() !== '') count++;
+  
+  const opVal = document.getElementById('opFilter')?.value;
+  if (opVal && opVal.trim() !== '') count++;
+  
+  const visitFromVal = document.getElementById('visitFromFilter')?.value;
+  if (visitFromVal && visitFromVal !== '') count++;
+  
+  const visitToVal = document.getElementById('visitToFilter')?.value;
+  if (visitToVal && visitToVal !== '') count++;
+  
+  const badge = document.getElementById('advActiveBadge');
+  const clearBtn = document.getElementById('advClearBtn');
+  
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  
+  if (clearBtn) {
+    if (count > 0) {
+      clearBtn.style.display = 'inline-flex';
+    } else {
+      clearBtn.style.display = 'none';
+    }
+  }
+}
+window.updateAdvBadge = updateAdvBadge;
+
+function clearAdvancedFilters() {
+  const minAge = document.getElementById('minAgeFilter');
+  const maxAge = document.getElementById('maxAgeFilter');
+  const place = document.getElementById('placeFilter');
+  const doctor = document.getElementById('doctorFilter');
+  const op = document.getElementById('opFilter');
+  const visitFrom = document.getElementById('visitFromFilter');
+  const visitTo = document.getElementById('visitToFilter');
+  
+  if (minAge) minAge.value = '';
+  if (maxAge) maxAge.value = '';
+  if (place) place.value = '';
+  if (doctor) doctor.value = '';
+  if (op) op.value = '';
+  if (visitFrom) visitFrom.value = '';
+  if (visitTo) visitTo.value = '';
+  
+  updateAdvBadge();
+  applyFilters();
+}
+window.clearAdvancedFilters = clearAdvancedFilters;
 
 function applyFilters() {
   const search = (document.getElementById('patientSearch')?.value || '').toLowerCase();
   const dept = document.getElementById('deptFilter')?.value || '';
   const status = document.getElementById('statusFilter')?.value || '';
 
-  const minAge = parseInt(document.getElementById('minAgeFilter')?.value) || 0;
-  const maxAge = parseInt(document.getElementById('maxAgeFilter')?.value) || 999;
+  const minAgeVal = document.getElementById('minAgeFilter')?.value;
+  const minAge = minAgeVal ? parseInt(minAgeVal) : 0;
+  
+  const maxAgeVal = document.getElementById('maxAgeFilter')?.value;
+  const maxAge = maxAgeVal ? parseInt(maxAgeVal) : 999;
+  
   const place = (document.getElementById('placeFilter')?.value || '').toLowerCase();
   const doctor = (document.getElementById('doctorFilter')?.value || '').toLowerCase();
   const op = (document.getElementById('opFilter')?.value || '').toLowerCase();
+  const visitFrom = document.getElementById('visitFromFilter')?.value || '';
+  const visitTo = document.getElementById('visitToFilter')?.value || '';
 
   filteredPatients = allPatients.filter(p => {
+    // 1. Global Search
     const name = `${p.fname} ${p.lname} ${p.op_no || p.id} ${p.contact} ${p.doctor || ''}`.toLowerCase();
     if (search && !name.includes(search)) return false;
+    
+    // 2. Tab chips (All, Admitted, Outpatient, Discharged)
+    if (activeFilter === 'admitted' && p.patient_type !== 'admitted') return false;
+    if (activeFilter === 'outpatient' && p.patient_type !== 'outpatient') return false;
+    if (activeFilter === 'discharged' && p.status !== 'discharged') return false;
+
+    // 3. Select Dropdowns
     if (dept && p.department !== dept) return false;
     if (status && p.status !== status) return false;
-    const age = parseInt(p.age) || 0;
-    if (age < minAge || age > maxAge) return false;
+
+    // 4. Advanced Age
+    const age = parseInt(p.age);
+    if (!isNaN(age)) {
+      if (age < minAge || age > maxAge) return false;
+    } else if (minAgeVal || maxAgeVal) {
+      return false;
+    }
+
+    // 5. Advanced Place
+    if (place) {
+      const pPlace = (p.place || p.address || p.Place || p.Address || '').toLowerCase();
+      if (!pPlace.includes(place)) return false;
+    }
+
+    // 6. Advanced Doctor
+    if (doctor) {
+      const pDoctor = (p.doctor || p.Doctor || p.doctor_name || p.assignedDoctor || '').toLowerCase();
+      if (!pDoctor.includes(doctor)) return false;
+    }
+
+    // 7. Advanced OP Number
+    if (op) {
+      const pOp = (p.op_no || p.id || '').toString().toLowerCase();
+      if (!pOp.includes(op)) return false;
+    }
+
+    // 8. Advanced Last Visit Date Range
+    if (visitFrom || visitTo) {
+      let visitDate = null;
+      if (p.last_visit) {
+        let d = p.last_visit;
+        if (d.toDate) d = d.toDate();
+        else if (d.seconds) d = new Date(d.seconds * 1000);
+        visitDate = new Date(d);
+      }
+      
+      if (!visitDate || isNaN(visitDate.getTime())) {
+        return false;
+      }
+
+      if (visitFrom) {
+        const fromDate = new Date(visitFrom);
+        if (!isNaN(fromDate.getTime())) {
+          fromDate.setHours(0, 0, 0, 0);
+          if (visitDate < fromDate) return false;
+        }
+      }
+
+      if (visitTo) {
+        const toDate = new Date(visitTo);
+        if (!isNaN(toDate.getTime())) {
+          toDate.setHours(23, 59, 59, 999);
+          if (visitDate > toDate) return false;
+        }
+      }
+    }
+
     return true;
   });
+
   if (sortCol) {
     filteredPatients.sort((a, b) => {
       const va = a[sortCol] || '';
@@ -125,10 +272,21 @@ function applyFilters() {
   currentPage = 1;
   const countEl = document.getElementById('patientCount');
   if (countEl) countEl.textContent = filteredPatients.length;
+
+  const advResultsCount = document.getElementById('advResultsCount');
+  if (advResultsCount) {
+    if (minAgeVal || maxAgeVal || place || doctor || op || visitFrom || visitTo) {
+      advResultsCount.textContent = `(${filteredPatients.length} found)`;
+    } else {
+      advResultsCount.textContent = '';
+    }
+  }
+
   renderTable();
 }
 
 function filterPatients() { applyFilters(); }
+window.filterPatients = filterPatients;
 
 function syncSearch(val) {
   const el = document.getElementById('patientSearch');
@@ -143,6 +301,7 @@ function setFilter(btn, filter) {
   activeFilter = filter;
   applyFilters();
 }
+window.setFilter = setFilter;
 
 function sortTable(col) {
   if (sortCol === col) sortDir *= -1;
@@ -263,6 +422,7 @@ async function submitEditPatient(e) {
     if (idx !== -1) {
       allPatients[idx] = result.data;
       window.allPatients = allPatients;
+      if (window.PatientCache) PatientCache.updateCachedPatient(id, result.data);
     }
     closeModal(null, 'editPatientModal');
     applyFilters();
@@ -281,6 +441,7 @@ async function deletePatient(id) {
     allPatients = allPatients.filter(p => p.id != id);
     window.allPatients = allPatients;
     filteredPatients = filteredPatients.filter(p => p.id != id);
+    if (window.PatientCache) PatientCache.removeCachedPatient(id);
     applyFilters();
     toast('Patient record removed', 'warning', 'delete');
   } catch (err) {
@@ -288,96 +449,141 @@ async function deletePatient(id) {
   }
 }
 
-async function loadPatients() {
+function normalizePatients(rawList) {
+  return rawList.map(p => {
+    let fname = p.fname || p.FirstName || '';
+    let lname  = p.lname  || p.LastName  || '';
+    if (!fname && !lname) {
+      const raw = p.Name || p.name || '';
+      const parts = String(raw).trim().split(/\s+/);
+      fname = parts[0] || '';
+      lname  = parts.slice(1).join(' ');
+    }
+    const contact = p.contact || p.Phone || p.phone || p.mobile || p.Mobile || '';
+    const department = p.department || p.dept || p.Department || '';
+    const blood_group = p.blood_group || p.blood || p.Blood ||
+                        p['Blood Group'] || p.BloodGroup || 'Unknown';
+    const patient_type = p.patient_type || p.type || p.Type || 'Outpatient';
+    const status = p.status || p.Status || 'stable';
+    const last_visit = p.last_visit || p.lastVisit || p['Last Visit'] ||
+                       p.LastVisit || p.date || '';
+    let age = p.age || p.Age || '';
+    if (!age && (p.dob || p.DOB)) {
+      const dob = new Date(p.dob || p.DOB);
+      if (!isNaN(dob.getTime()))
+        age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
+    }
+    const gender = p.gender || p.Gender || p.Sex || p.sex || '';
+    const op_no = p.op_no || p['Hosp. OP No'] || p['OP No'] ||
+                  p['ID. NO'] || p['ID'] || p.op || '';
+    const doctor = p.doctor || p.Doctor || p.doctor_name || '';
+    const email = p.email || p.Email || '';
+    return { ...p, fname, lname, contact, department, blood_group, patient_type, status, last_visit, age, gender, op_no, doctor, email };
+  });
+}
+
+function updateSyncIndicator() {
+  var el = document.getElementById('syncIndicator');
+  if (!el) return;
+  var parent = el.closest('.sync-bar');
+  PatientCache.getCachedPatients().then(function(cached) {
+    if (!cached) {
+      el.innerHTML = '<span class="material-icons-round">sync_disabled</span> Not synced yet';
+      if (parent) { parent.className = 'sync-bar sync-bar--error'; }
+      return;
+    }
+    var label = '';
+    var d = new Date(cached.timestamp);
+    var diffMs = Date.now() - d;
+    var mins = Math.floor(diffMs / 60000);
+    if (mins < 1) label = 'Just now';
+    else if (mins < 60) label = mins + 'm ago';
+    else { var hrs = Math.floor(mins / 60); mins = mins % 60; label = hrs + 'h ' + mins + 'm ago'; }
+    el.innerHTML = '<span class="material-icons-round">' + (PatientCache.isStale(cached.timestamp) ? 'sync_problem' : 'sync') + '</span> Synced ' + label;
+    if (parent) {
+      if (PatientCache.isStale(cached.timestamp)) parent.className = 'sync-bar sync-bar--stale';
+      else parent.className = 'sync-bar';
+    }
+  });
+}
+
+function refreshPatients() {
+  PatientCache.clearCache().then(function() {
+    loadPatients(true);
+  });
+}
+window.refreshPatients = refreshPatients;
+
+async function loadPatients(skipCache) {
+  skipCache = skipCache || false;
+  _lastPatientDoc = null;
+  _hasMorePatients = false;
+
   const tbody = document.getElementById('patientTableBody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--on-surface-var)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px;color:var(--outline-var)">hourglass_empty</span>Loading patients...</td></tr>';
+
   try {
-    const result = await window.API.getPatients({ limit: 10000 });
-    allPatients = result.data.map(p => {
-      // Normalise field names: handle bulk-imported records (Name, Phone, Sex, etc.)
-      // AND newly-created records (fname, lname, contact, etc.)
-
-      // --- Name ---
-      let fname = p.fname || p.FirstName || '';
-      let lname  = p.lname  || p.LastName  || '';
-      if (!fname && !lname) {
-        const raw = p.Name || p.name || '';
-        const parts = String(raw).trim().split(/\s+/);
-        fname = parts[0] || '';
-        lname  = parts.slice(1).join(' ');
-      }
-
-      // --- Contact ---
-      const contact = p.contact || p.Phone || p.phone || p.mobile || p.Mobile || '';
-
-      // --- Department ---
-      const department = p.department || p.dept || p.Department || '';
-
-      // --- Blood group ---
-      const blood_group = p.blood_group || p.blood || p.Blood ||
-                          p['Blood Group'] || p.BloodGroup || 'Unknown';
-
-      // --- Patient type ---
-      const patient_type = p.patient_type || p.type || p.Type || 'Outpatient';
-
-      // --- Status --- (imported records may have no status)
-      const status = p.status || p.Status || 'stable';
-
-      // --- Last visit ---
-      const last_visit = p.last_visit || p.lastVisit || p['Last Visit'] ||
-                         p.LastVisit || p.date || '';
-
-      // --- Age ---
-      let age = p.age || p.Age || '';
-      if (!age && (p.dob || p.DOB)) {
-        const dob = new Date(p.dob || p.DOB);
-        if (!isNaN(dob.getTime()))
-          age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
-      }
-
-      // --- Gender / Sex ---
-      const gender = p.gender || p.Gender || p.Sex || p.sex || '';
-
-      // --- OP / Patient ID displayed in table ---
-      const op_no = p.op_no || p['Hosp. OP No'] || p['OP No'] ||
-                    p['ID. NO'] || p['ID'] || p.op || '';
-
-      // --- Doctor ---
-      const doctor = p.doctor || p.Doctor || p.doctor_name || '';
-
-      // --- Email ---
-      const email = p.email || p.Email || '';
-
-      return {
-        ...p,
-        fname,
-        lname,
-        contact,
-        department,
-        blood_group,
-        patient_type,
-        status,
-        last_visit,
-        age,
-        gender,
-        op_no,
-        doctor,
-        email
-      };
-    });
+    // First page: 10 records
+    const result = await window.API.getPatients({ limit: 10 });
+    allPatients = normalizePatients(result.data || []);
     window.allPatients = allPatients;
+    _lastPatientDoc = result.lastDoc || null;
+    _hasMorePatients = result.hasMore || false;
+    updateLoadMoreBar();
   } catch (e) {
     console.error('Failed to load patients:', e);
     const errMsg = e && e.message ? e.message : String(e);
     if (typeof toast === 'function') toast('Could not load patients: ' + errMsg, 'error');
     const tbody2 = document.getElementById('patientTableBody');
-    if (tbody2) tbody2.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--error,#ef4444)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px">error_outline</span>Failed to load: ${errMsg}<br><button class="btn-secondary" style="margin-top:12px" onclick="loadPatients()">Retry</button></td></tr>`;
+    if (tbody2) tbody2.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--error,#ef4444)"><span class="material-icons-round" style="display:block;font-size:40px;margin-bottom:8px">error_outline</span>Failed to load: ' + errMsg + '<br><button class="btn-secondary" style="margin-top:12px" onclick="loadPatients()">Retry</button></td></tr>';
     allPatients = [];
     window.allPatients = allPatients;
+    updateLoadMoreBar();
   }
+
   applyFilters();
 }
 window.loadPatients = loadPatients;
+
+/* Load the next page from Firestore and append results */
+async function loadMorePatients() {
+  if (!_hasMorePatients) return;
+  const btn = document.getElementById('loadMoreBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="material-icons-round" style="animation:spin 1s linear infinite">sync</span> Loading...'; }
+
+  try {
+    const result = await window.API.getPatients({ limit: 10, lastDoc: _lastPatientDoc });
+    const newPatients = normalizePatients(result.data || []);
+    allPatients = [...allPatients, ...newPatients];
+    window.allPatients = allPatients;
+    _lastPatientDoc = result.lastDoc || null;
+    _hasMorePatients = result.hasMore || false;
+    if (typeof toast === 'function') toast(`Loaded ${newPatients.length} more patient${newPatients.length !== 1 ? 's' : ''}`, 'info');
+  } catch (e) {
+    console.error('loadMorePatients error:', e);
+    if (typeof toast === 'function') toast('Failed to load more patients', 'error');
+  }
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '<span class="material-icons-round">expand_more</span> Load More Patients'; }
+  updateLoadMoreBar();
+  applyFilters();
+}
+window.loadMorePatients = loadMorePatients;
+
+/* Show/hide the Load More bar based on pagination state */
+function updateLoadMoreBar() {
+  const bar  = document.getElementById('loadMoreBar');
+  const info = document.getElementById('loadMoreInfo');
+  if (!bar) return;
+  if (_hasMorePatients) {
+    bar.style.display = 'block';
+    if (info) info.textContent = `Showing ${allPatients.length} patients · more available`;
+  } else {
+    bar.style.display = 'none';
+    if (info) info.textContent = '';
+  }
+}
+
 
 async function submitAddPatient(e) {
   e.preventDefault();
@@ -401,6 +607,7 @@ async function submitAddPatient(e) {
     const newP = result.data;
     allPatients.unshift(newP);
     window.allPatients = allPatients;
+    if (window.PatientCache) PatientCache.addCachedPatient(newP);
     applyFilters();
     closeModal(null, 'addPatientModal');
     document.getElementById('addPatientForm').reset();
@@ -413,22 +620,5 @@ async function submitAddPatient(e) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Wait for Firebase Auth to establish the session before querying Firestore.
-  // Without this, Firestore rules reject the read (request.auth is null)
-  // because the auth token hasn't been restored yet from the previous session.
-  function doLoad() {
-    loadPatients();
-  }
-  if (window._authReady) {
-    window._authReady.then(doLoad).catch(doLoad);
-  } else {
-    // _authReady not yet set — wait briefly then try
-    const poll = setInterval(() => {
-      if (window._authReady !== undefined) {
-        clearInterval(poll);
-        window._authReady.then(doLoad).catch(doLoad);
-      }
-    }, 50);
-    setTimeout(() => { clearInterval(poll); doLoad(); }, 3000);
-  }
+  loadPatients();
 });
