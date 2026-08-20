@@ -239,35 +239,33 @@ window.sheetsFetchDirect = function(params) {
 
 function isValidOpNo(val) {
   if (!val) return false;
-  var n = Number(val);
-  return Number.isInteger(n) && n > 0 && n < 1000000;
+  var s = String(val).trim();
+  var n = Number(s);
+  return (!isNaN(n) && n > 0 && n < 1000000) || /^[A-Za-z0-9\-\/]+$/.test(s);
 }
 
 function normalizePatient(p) {
   p.notes = p.notes || p['Notes'] || '';
-  if (!p.op_no && p.notes) {
-    var m = p.notes.match(/OP\s*No\.?\s*:?\s*(\d+)/i);
-    if (m) p.op_no = m[1];
+  var rawOp = p.op_no || p['OP No'] || p['Hosp. OP No'] || p['ID. NO'] || p['ID'] || p['UHID'] || p.uhid || p.op || p.id || '';
+  if (!rawOp && p.notes) {
+    var m = String(p.notes).match(/(?:OP|UHID|ID|Reg)?\s*(?:No\.?|#)?\s*:?\s*([A-Za-z0-9\-\/]+)/i);
+    if (m) rawOp = m[1];
   }
-  if (p.op_no && !isValidOpNo(p.op_no)) p.op_no = '';
-  if (!p.op_no) {
-    var rawId = p['ID'] || p.id || '';
-    if (isValidOpNo(rawId)) p.op_no = rawId;
-  }
-  p.id = p.op_no || '';
+  p.op_no = String(rawOp || '').trim();
+  p.id = p.op_no || p.id || String(p['ID'] || p.uhid || '');
   p.fname = p.fname || p['First Name'] || p.FirstName || p.Name || '';
   p.lname = p.lname || p['Last Name'] || p.LastName || '';
-  p.contact = String(p.contact || p['Phone'] || p.Phone || p.phone || '');
-  p.gender = p.gender || p['Gender'] || p.Gender || '';
+  p.contact = String(p.contact || p['Phone'] || p.Phone || p.phone || p.mobile || p.Mobile || '');
+  p.gender = p.gender || p['Gender'] || p.Gender || p.Sex || p.sex || '';
   p.age = p.age || p['Age'] || p.Age || '';
-  p.address = p.address || p['Address'] || '';
-  p.blood_group = p.blood_group || p['Blood Group'] || p.Blood_Group || 'Unknown';
-  p.department = p.department || p['Department'] || p.Department || 'General';
+  p.address = p.address || p['Address'] || p.place || p.Place || '';
+  p.blood_group = p.blood_group || p['Blood Group'] || p.Blood_Group || p.blood || 'Unknown';
+  p.department = p.department || p['Department'] || p.Department || p.dept || 'General';
   p.patient_type = p.patient_type || p['Admission Type'] || p.Admission_Type || 'outpatient';
   p.status = p.status || p['Status'] || p.Status || 'stable';
-  p.assigned_doctor = p.assigned_doctor || p['Assigned Doctor'] || '';
+  p.assigned_doctor = p.assigned_doctor || p['Assigned Doctor'] || p.doctor || '';
   p.last_visit = p.last_visit || p['Last Visit'] || '';
-  p.created_on = p.created_on || p['Created On'] || p.Created_On || '';
+  p.created_on = p.created_on || p['Created On'] || p.Created_On || p.createdAt || '';
   return p;
 }
 

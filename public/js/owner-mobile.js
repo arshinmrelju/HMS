@@ -40,6 +40,37 @@
     }, 2800);
   }
 
+  function getPatientDisplayName(p) {
+    if (!p) return 'Patient';
+    var fname = String(p.fname || p['First Name'] || p.FirstName || '').trim();
+    var lname = String(p.lname || p['Last Name'] || p.LastName || '').trim();
+    var fullName = String(p.patient_name || p['Patient Name'] || p.Name || p.name || '').trim();
+
+    if (fname && lname) {
+      if (lname.toLowerCase() === 'patient') return fname;
+      return (fname + ' ' + lname).trim();
+    }
+    if (fname) return fname;
+    if (fullName) {
+      if (fullName.toLowerCase().endsWith(' patient') && fullName.length > 8) {
+        return fullName.slice(0, -8).trim();
+      }
+      return fullName;
+    }
+    if (lname && lname.toLowerCase() !== 'patient') return lname;
+    return 'Patient';
+  }
+
+  function getPatientOpNo(p) {
+    if (!p) return '';
+    var raw = p.op_no || p['OP No'] || p['Hosp. OP No'] || p['ID. NO'] || p['ID'] || p['UHID'] || p.uhid || p.op || p.id || p.patient_id || '';
+    if (!raw && p.notes) {
+      var m = String(p.notes).match(/(?:OP|UHID|ID|Reg)?\s*(?:No\.?|#)?\s*:?\s*([A-Za-z0-9\-\/]+)/i);
+      if (m) raw = m[1];
+    }
+    return String(raw || '').trim();
+  }
+
   function isToday(dateVal) {
     if (!dateVal) return false;
     var now = new Date();
@@ -246,7 +277,13 @@
     showToast('Syncing live clinic data...', 'sync');
     var api = window.API || {};
 
-    var pPatients = api.getPatients ? api.getPatients().then(function (r) { _data.patients = (r && r.data) || []; }).catch(function () { _data.patients = []; }) : Promise.resolve();
+    var pPatients = api.getPatients ? api.getPatients().then(function (r) {
+      var list = (r && r.data) || [];
+      _data.patients = list.map(function (p, idx) {
+        p._idx = idx;
+        return p;
+      });
+    }).catch(function () { _data.patients = []; }) : Promise.resolve();
     var pAppts = api.getAppointments ? api.getAppointments().then(function (r) { _data.appointments = (r && r.data) || []; }).catch(function () { _data.appointments = []; }) : Promise.resolve();
     var pDoctors = api.getDoctors ? api.getDoctors().then(function (r) { _data.doctors = (r && r.data) || []; }).catch(function () { _data.doctors = []; }) : Promise.resolve();
     var pDepts = api.getDepartments ? api.getDepartments().then(function (r) { _data.departments = (r && r.data) || []; }).catch(function () { _data.departments = []; }) : Promise.resolve();
@@ -410,11 +447,13 @@
     var items = [];
 
     // Recent registered patients
-    _data.patients.slice(0, 15).forEach(function (p) {
+    _data.patients.slice(0, 15).forEach(function (p, idx) {
       var dateStr = p.created_on || p['Created On'] || p.createdAt || '';
+      var pName = getPatientDisplayName(p);
+      var op = getPatientOpNo(p) || '—';
       items.push({
-        title: 'New Patient: ' + ((p.fname || p['First Name'] || p.Name || 'Patient') + ' ' + (p.lname || p['Last Name'] || '')).trim(),
-        sub: 'OP #' + (p.op_no || p['OP No'] || '—') + ' · ' + (p.department || 'General OPD'),
+        title: 'New Patient: ' + pName,
+        sub: 'OP #' + op + ' · ' + (p.department || p.Department || 'General OPD'),
         date: dateStr,
         icon: 'person_add',
         color: '#0D9488'
@@ -466,9 +505,9 @@
     searchVal = searchVal.toLowerCase().trim();
 
     var filtered = pts.filter(function (p) {
-      var name = ((p.fname || '') + ' ' + (p.lname || '') + ' ' + (p.Name || '')).toLowerCase();
-      var op = String(p.op_no || p['OP No'] || p.id || '').toLowerCase();
-      var phone = String(p.contact || p.Phone || p.phone || '').toLowerCase();
+      var name = getPatientDisplayName(p).toLowerCase();
+      var op = getPatientOpNo(p).toLowerCase();
+      var phone = String(p.contact || p.Phone || p.phone || p.mobile || '').toLowerCase();
       if (!searchVal) return true;
       return name.indexOf(searchVal) !== -1 || op.indexOf(searchVal) !== -1 || phone.indexOf(searchVal) !== -1;
     });
@@ -478,22 +517,23 @@
       return;
     }
 
-    container.innerHTML = filtered.slice(0, 60).map(function (p) {
-      var name = (p.fname || p['First Name'] || p.Name || 'Patient') + ' ' + (p.lname || p['Last Name'] || '');
-      var op = p.op_no || p['OP No'] || p.id || '—';
-      var phone = p.contact || p.Phone || p.phone || '—';
-      var dept = p.department || p.Department || 'General';
-      var age = p.age || '—';
-      var gender = p.gender || '—';
+    container.innerHTML = filtered.slice(0, 60).map(function (p, i) {
+      var name = getPatientDisplayName(p);
+      var op = getPatientOpNo(p) || '—';
+      var phone = p.contact || p.Phone || p.phone || p.mobile || '—';
+      var dept = p.department || p.Department || p.dept || 'General';
+      var age = p.age || p.Age || '—';
+      var gender = p.gender || p.Gender || p.Sex || '—';
+      var targetId = p._idx !== undefined ? p._idx : (p.id || p.op_no || i);
 
-      return '<div class="owner-patient-card" onclick="openPatientSheet(\'' + esc(op) + '\')">' +
+      return '<div class="owner-patient-card" onclick="openPatientSheet(\'' + esc(String(targetId)) + '\')">' +
         '<div class="owner-patient-top">' +
-          '<div class="owner-patient-name">' + esc(name.trim()) + '</div>' +
+          '<div class="owner-patient-name">' + esc(name) + '</div>' +
           '<div class="owner-patient-token">OP #' + esc(op) + '</div>' +
         '</div>' +
         '<div class="owner-patient-meta">' +
           '<span><span class="material-icons-round">medical_services</span> ' + esc(dept) + '</span>' +
-          '<span><span class="material-icons-round">person</span> ' + esc(age) + 'y / ' + esc(gender) + '</span>' +
+          '<span><span class="material-icons-round">person</span> ' + esc(age) + (age !== '—' ? 'y' : '') + ' / ' + esc(gender) + '</span>' +
           '<span><span class="material-icons-round">phone</span> ' + esc(phone) + '</span>' +
         '</div>' +
       '</div>';
@@ -510,9 +550,10 @@
       return;
     }
 
-    container.innerHTML = docs.map(function (doc) {
+    container.innerHTML = docs.map(function (doc, idx) {
       var statusCls = (doc.status || '').toLowerCase() === 'available' ? 'available' : 'pending';
-      return '<div class="owner-patient-card" onclick="openDoctorSheet(\'' + esc(doc.id || doc.name) + '\')">' +
+      var targetId = doc.id || doc.name || idx;
+      return '<div class="owner-patient-card" onclick="openDoctorSheet(\'' + esc(String(targetId)) + '\')">' +
         '<div class="owner-patient-top">' +
           '<div class="owner-patient-name">' + esc(doc.name || 'Doctor') + '</div>' +
           '<span class="rpt-badge ' + statusCls + '">' + esc(doc.status || 'Active') + '</span>' +
@@ -549,10 +590,30 @@
   // ──────────────────────────────────────────────
   // BOTTOM SHEETS
   // ──────────────────────────────────────────────
-  window.openPatientSheet = function (opNo) {
-    var pt = _data.patients.find(function (p) {
-      return String(p.op_no || p['OP No'] || p.id) === String(opNo);
-    });
+  window.openPatientSheet = function (target) {
+    var pt = null;
+    var targetStr = String(target !== undefined && target !== null ? target : '').trim();
+
+    // 1. Try finding by _idx or numerical index
+    if (targetStr !== '') {
+      var num = parseInt(targetStr, 10);
+      if (!isNaN(num) && num >= 0) {
+        pt = _data.patients.find(function (p) { return p._idx === num; }) || _data.patients[num];
+      }
+    }
+
+    // 2. Try finding by OP No, ID, UHID, Contact, or Name
+    if (!pt && targetStr !== '') {
+      var targetLower = targetStr.toLowerCase();
+      pt = _data.patients.find(function (p) {
+        var op = getPatientOpNo(p).toLowerCase();
+        var id = String(p.id || '').trim().toLowerCase();
+        var contact = String(p.contact || p.Phone || p.phone || p.mobile || '').trim().toLowerCase();
+        var name = getPatientDisplayName(p).toLowerCase();
+        return (op && op === targetLower) || (id && id === targetLower) || (contact && contact === targetLower) || (name && name === targetLower);
+      });
+    }
+
     if (!pt) {
       showToast('Patient details not found', 'error');
       return;
@@ -563,21 +624,33 @@
     var title = document.getElementById('ownerSheetTitle');
     if (!overlay || !content) return;
 
-    var name = (pt.fname || pt['First Name'] || pt.Name || 'Patient') + ' ' + (pt.lname || pt['Last Name'] || '');
-    if (title) title.textContent = 'Patient: ' + name.trim();
+    var name = getPatientDisplayName(pt);
+    if (title) title.textContent = 'Patient: ' + name;
 
-    var phone = pt.contact || pt.Phone || pt.phone || '';
+    var opNo = getPatientOpNo(pt) || '—';
+    var phone = pt.contact || pt.Phone || pt.phone || pt.mobile || '';
+    var age = pt.age || pt.Age || '—';
+    var gender = pt.gender || pt.Gender || pt.Sex || '—';
+    var dept = pt.department || pt.Department || pt.dept || 'General';
+    var place = pt.place || pt.Place || pt.city || pt.City || pt.address || pt.Address || '—';
+    var created = pt.created_on || pt['Created On'] || pt.createdAt || pt.date || '—';
+    var doctor = pt.assigned_doctor || pt['Assigned Doctor'] || pt.doctor || pt.Doctor || '—';
+    var blood = pt.blood_group || pt['Blood Group'] || pt.blood || '—';
+    var notes = pt.notes || pt['Notes'] || '';
 
     content.innerHTML = '<div style="display:flex;flex-direction:column;gap:12px;">' +
       '<div style="background:#f8fafc;padding:14px;border-radius:14px;border:1px solid var(--owner-border);">' +
         '<div style="font-size:0.75rem;color:var(--owner-muted);text-transform:uppercase;">Registration OP Number</div>' +
-        '<div style="font-size:1.2rem;font-weight:800;color:var(--owner-primary-dark);margin-top:2px;">#' + esc(pt.op_no || pt['OP No'] || '—') + '</div>' +
+        '<div style="font-size:1.2rem;font-weight:800;color:var(--owner-primary-dark);margin-top:2px;">#' + esc(opNo) + '</div>' +
       '</div>' +
-      '<div class="rpt-row"><span class="rpt-row-label">Age &amp; Gender</span><span class="rpt-row-value">' + esc(pt.age || '—') + ' yrs / ' + esc(pt.gender || '—') + '</span></div>' +
-      '<div class="rpt-row"><span class="rpt-row-label">Department</span><span class="rpt-row-value">' + esc(pt.department || 'General') + '</span></div>' +
+      '<div class="rpt-row"><span class="rpt-row-label">Age &amp; Gender</span><span class="rpt-row-value">' + esc(age) + (age !== '—' ? ' yrs' : '') + ' / ' + esc(gender) + '</span></div>' +
+      '<div class="rpt-row"><span class="rpt-row-label">Department</span><span class="rpt-row-value">' + esc(dept) + '</span></div>' +
+      (doctor !== '—' ? '<div class="rpt-row"><span class="rpt-row-label">Assigned Doctor</span><span class="rpt-row-value">' + esc(doctor) + '</span></div>' : '') +
+      (blood !== '—' && blood !== 'Unknown' ? '<div class="rpt-row"><span class="rpt-row-label">Blood Group</span><span class="rpt-row-value">' + esc(blood) + '</span></div>' : '') +
       '<div class="rpt-row"><span class="rpt-row-label">Phone Contact</span><span class="rpt-row-value">' + esc(phone || '—') + '</span></div>' +
-      '<div class="rpt-row"><span class="rpt-row-label">Place / City</span><span class="rpt-row-value">' + esc(pt.place || pt.city || '—') + '</span></div>' +
-      '<div class="rpt-row"><span class="rpt-row-label">Registered Date</span><span class="rpt-row-value">' + esc(pt.created_on || pt['Created On'] || '—') + '</span></div>' +
+      '<div class="rpt-row"><span class="rpt-row-label">Place / Address</span><span class="rpt-row-value">' + esc(place) + '</span></div>' +
+      '<div class="rpt-row"><span class="rpt-row-label">Registered Date</span><span class="rpt-row-value">' + esc(created) + '</span></div>' +
+      (notes ? '<div class="rpt-row"><span class="rpt-row-label">Notes</span><span class="rpt-row-value">' + esc(notes) + '</span></div>' : '') +
       '<div style="margin-top:14px;display:flex;gap:10px;">' +
         (phone ? '<a href="tel:' + esc(phone) + '" style="flex:1;background:var(--owner-primary);color:white;text-align:center;padding:12px;border-radius:12px;text-decoration:none;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;"><span class="material-icons-round">call</span> Call Patient</a>' : '') +
         (phone ? '<a href="https://api.whatsapp.com/send?phone=91' + esc(phone) + '" target="_blank" style="flex:1;background:#25D366;color:white;text-align:center;padding:12px;border-radius:12px;text-decoration:none;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;"><span class="material-icons-round">chat</span> WhatsApp</a>' : '') +
@@ -588,8 +661,11 @@
   };
 
   window.openDoctorSheet = function (docId) {
-    var doc = _data.doctors.find(function (d) {
-      return String(d.id || d.name) === String(docId);
+    var docIdStr = String(docId || '').toLowerCase();
+    var doc = _data.doctors.find(function (d, idx) {
+      return String(d.id || '').toLowerCase() === docIdStr ||
+             String(d.name || '').toLowerCase() === docIdStr ||
+             String(idx) === docIdStr;
     });
     if (!doc) return;
 
@@ -599,12 +675,14 @@
     if (!overlay || !content) return;
 
     if (title) title.textContent = 'Doctor: ' + (doc.name || 'Medical Staff');
+    var docPhone = doc.phone || doc.email || '';
 
     content.innerHTML = '<div style="display:flex;flex-direction:column;gap:12px;">' +
       '<div class="rpt-row"><span class="rpt-row-label">Department</span><span class="rpt-row-value">' + esc(doc.dept || 'General') + '</span></div>' +
       '<div class="rpt-row"><span class="rpt-row-label">Qualifications</span><span class="rpt-row-value">' + esc(doc.qualification || 'MBBS') + '</span></div>' +
       '<div class="rpt-row"><span class="rpt-row-label">Status</span><span class="rpt-row-value">' + esc(doc.status || 'Available') + '</span></div>' +
-      '<div class="rpt-row"><span class="rpt-row-label">Phone</span><span class="rpt-row-value">' + esc(doc.phone || '—') + '</span></div>' +
+      '<div class="rpt-row"><span class="rpt-row-label">Phone / Contact</span><span class="rpt-row-value">' + esc(docPhone || '—') + '</span></div>' +
+      (doc.phone ? '<div style="margin-top:14px;"><a href="tel:' + esc(doc.phone) + '" style="display:flex;background:var(--owner-primary);color:white;text-align:center;padding:12px;border-radius:12px;text-decoration:none;font-weight:700;align-items:center;justify-content:center;gap:6px;"><span class="material-icons-round">call</span> Call Doctor</a></div>' : '') +
     '</div>';
 
     overlay.classList.add('active');
