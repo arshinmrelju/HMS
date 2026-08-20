@@ -10,7 +10,7 @@
    - All app shell pages are pre-cached on install
    ================================================================ */
 
-const CACHE = 'wellness-v7-offline';
+const CACHE = 'wellness-v8-offline';
 
 const STATIC_ASSETS = [
   /* ─── App Shell Pages ─── */
@@ -21,6 +21,7 @@ const STATIC_ASSETS = [
   '/report.html',
   '/offline.html',
   '/manifest.json',
+  '/owner-manifest.json',
 
   /* ─── Core CSS ─── */
   '/css/main.css',
@@ -29,6 +30,7 @@ const STATIC_ASSETS = [
   '/css/staff-theme.css',
   '/css/patients.css',
   '/css/administration.css',
+  '/css/owner-mobile.css',
 
   /* ─── Core JS ─── */
   '/js/app.js',
@@ -41,6 +43,7 @@ const STATIC_ASSETS = [
   '/js/pwa.js',
   '/js/offline-db.js',
   '/js/offline-sync.js',
+  '/js/owner-mobile.js',
 
   /* ─── Assets ─── */
   '/assets/hms-logo.jpg'
