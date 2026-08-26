@@ -1,6 +1,6 @@
 'use strict';
 
-var SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbzTBsgr2LsVHEvQPKJRHnX0u7lwMUnUyozs8xzoUsegtehxoRTDy4LSeBK3TV9TAhAPIg/exec';
+var SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbzyWYn8o1YCA5cGN8YoQcCTOMb271ClriIUGv8M242u_K4TnhIbj6Xsi8ZYmMq-a0av3g/exec';
 
 var _patientsCache = null;
 var _appointmentsCache = null;
@@ -19,7 +19,7 @@ function _loadDoctorsCache() {
         _doctorsCacheTime = parsed.timestamp;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 _loadDoctorsCache();
 
@@ -28,13 +28,13 @@ function _saveDoctorsCache(data) {
   _doctorsCacheTime = Date.now();
   try {
     localStorage.setItem(DOCTORS_CACHE_KEY, JSON.stringify({ data: data, timestamp: _doctorsCacheTime }));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function _clearDoctorsCache() {
   _doctorsCache = null;
   _doctorsCacheTime = 0;
-  try { localStorage.removeItem(DOCTORS_CACHE_KEY); } catch (e) {}
+  try { localStorage.removeItem(DOCTORS_CACHE_KEY); } catch (e) { }
 }
 
 var _departmentsCache = null;
@@ -52,7 +52,7 @@ function _loadDepartmentsCache() {
         _departmentsCacheTime = parsed.timestamp;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 _loadDepartmentsCache();
 
@@ -61,13 +61,13 @@ function _saveDepartmentsCache(data) {
   _departmentsCacheTime = Date.now();
   try {
     localStorage.setItem(DEPARTMENTS_CACHE_KEY, JSON.stringify({ data: data, timestamp: _departmentsCacheTime }));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function _clearDepartmentsCache() {
   _departmentsCache = null;
   _departmentsCacheTime = 0;
-  try { localStorage.removeItem(DEPARTMENTS_CACHE_KEY); } catch (e) {}
+  try { localStorage.removeItem(DEPARTMENTS_CACHE_KEY); } catch (e) { }
 }
 
 var _patientsTotal = 0;
@@ -75,7 +75,7 @@ var _batchSize = 5000;
 var _patientsLoading = null;
 
 // One-time purge of stale seed/demo data from localStorage
-(function() {
+(function () {
   var purgeKey = 'hms_seed_purged_v2';
   if (!localStorage.getItem(purgeKey)) {
     localStorage.removeItem('hms_local_patients');
@@ -99,7 +99,7 @@ function getLocalData(key) {
 function setLocalData(key, data) {
   try {
     localStorage.setItem('hms_local_' + key, JSON.stringify(data));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // Fallback: return empty arrays (production — no seed data)
@@ -119,7 +119,7 @@ function sheetsFetch(params, callback) {
   }
 
   if (!callback) {
-    return new Promise(function(resolve) {
+    return new Promise(function (resolve) {
       sheetsFetch(params, resolve);
     });
   }
@@ -131,20 +131,20 @@ function sheetsFetch(params, callback) {
   }
 
   var callbackName = 'scb' + String(Math.random()).slice(2);
-  
+
   // Google Apps Script cold starts can take 30+ seconds — allow 45s
-  var timeoutId = setTimeout(function() {
+  var timeoutId = setTimeout(function () {
     if (window[callbackName]) {
       console.warn('JSONP request timed out for action: ' + (params.action || 'unknown'));
       delete window[callbackName];
       var s = document.getElementById(callbackName);
       if (s) s.parentNode.removeChild(s);
-      
+
       if (window.OfflineSync && window.OfflineSync.fallbackRead) {
-        window.OfflineSync.fallbackRead(params.action).then(function(fb) {
+        window.OfflineSync.fallbackRead(params.action).then(function (fb) {
           if (fb) { callback(fb); }
           else { callback({ success: false, error: 'Request timed out' }); }
-        }).catch(function() {
+        }).catch(function () {
           callback({ success: false, error: 'Request timed out' });
         });
       } else {
@@ -153,7 +153,7 @@ function sheetsFetch(params, callback) {
     }
   }, 45000);
 
-  window[callbackName] = function(data) {
+  window[callbackName] = function (data) {
     clearTimeout(timeoutId);
     delete window[callbackName];
     var s = document.getElementById(callbackName);
@@ -175,17 +175,17 @@ function sheetsFetch(params, callback) {
   var script = document.createElement('script');
   script.id = callbackName;
   script.src = url;
-  script.onerror = function() {
+  script.onerror = function () {
     clearTimeout(timeoutId);
     delete window[callbackName];
     var s = document.getElementById(callbackName);
     if (s) s.parentNode.removeChild(s);
 
     if (window.OfflineSync && window.OfflineSync.fallbackRead) {
-      window.OfflineSync.fallbackRead(params.action).then(function(fb) {
+      window.OfflineSync.fallbackRead(params.action).then(function (fb) {
         if (fb) { callback(fb); }
         else { callback({ success: false, error: 'Network error loading data' }); }
-      }).catch(function() {
+      }).catch(function () {
         callback({ success: false, error: 'Network error loading data' });
       });
     } else {
@@ -196,10 +196,10 @@ function sheetsFetch(params, callback) {
 }
 
 // Expose direct fetch for OfflineSync replay queue without interception
-window.sheetsFetchDirect = function(params) {
-  return new Promise(function(resolve) {
+window.sheetsFetchDirect = function (params) {
+  return new Promise(function (resolve) {
     var callbackName = 'scb' + String(Math.random()).slice(2);
-    var timeoutId = setTimeout(function() {
+    var timeoutId = setTimeout(function () {
       if (window[callbackName]) {
         delete window[callbackName];
         var s = document.getElementById(callbackName);
@@ -208,7 +208,7 @@ window.sheetsFetchDirect = function(params) {
       }
     }, 45000);
 
-    window[callbackName] = function(data) {
+    window[callbackName] = function (data) {
       clearTimeout(timeoutId);
       delete window[callbackName];
       var s = document.getElementById(callbackName);
@@ -226,7 +226,7 @@ window.sheetsFetchDirect = function(params) {
     var script = document.createElement('script');
     script.id = callbackName;
     script.src = url;
-    script.onerror = function() {
+    script.onerror = function () {
       clearTimeout(timeoutId);
       delete window[callbackName];
       var s = document.getElementById(callbackName);
@@ -274,7 +274,7 @@ function fallbackPatients(params) {
   var local = getLocalData('patients') || seedLocalPatients();
   if (params && params.search) {
     var search = params.search.toLowerCase();
-    local = local.filter(function(p) {
+    local = local.filter(function (p) {
       return (p.fname + ' ' + p.lname + ' ' + p.contact + ' ' + p.op_no).toLowerCase().indexOf(search) !== -1;
     });
   }
@@ -284,7 +284,7 @@ function fallbackPatients(params) {
 }
 
 window.API = {
-  getPatients: function(params) {
+  getPatients: function (params) {
     params = params || {};
 
     // Dedup concurrent calls — return the same promise
@@ -297,19 +297,39 @@ window.API = {
 
     // Searching uses a single request
     if (params.search) {
-      promise = sheetsFetch(q).then(function(resp) {
+      promise = sheetsFetch(q).then(function (resp) {
         if (resp.success && resp.data) {
           resp.data = resp.data.map(normalizePatient);
           _patientsCache = resp.data;
           _patientsTotal = resp.total || resp.data.length;
+          try { localStorage.setItem('hms_patients_total', String(_patientsTotal)); } catch (e) { }
           return resp;
         }
         return fallbackPatients(params);
       });
+    } else if (params.limit) {
+      var fetchOffset = params.offset || 0;
+      promise = sheetsFetch({ action: 'getPatients', limit: params.limit, offset: fetchOffset }).then(function (meta) {
+        if (!meta.success) return fallbackPatients(params);
+        var total = meta.total !== undefined ? meta.total : (meta.data ? meta.data.length : 0);
+        _patientsTotal = total;
+        try { localStorage.setItem('hms_patients_total', String(total)); } catch (e) { }
+
+        if (params.latest && total > params.limit && fetchOffset === 0) {
+          var latestOffset = Math.max(0, total - params.limit);
+          return sheetsFetch({ action: 'getPatients', limit: params.limit, offset: latestOffset }).then(function (latestMeta) {
+            var data = (latestMeta.data || meta.data || []).map(normalizePatient);
+            return { success: true, data: data, total: total };
+          });
+        }
+
+        var data = (meta.data || []).map(normalizePatient);
+        return { success: true, data: data, total: total };
+      });
     } else {
       // Step 1: fetch first batch (limit = _batchSize, offset = 0)
       var batchSize = _batchSize;
-      promise = sheetsFetch({ action: 'getPatients', limit: batchSize, offset: 0 }).then(function(meta) {
+      promise = sheetsFetch({ action: 'getPatients', limit: batchSize, offset: 0 }).then(function (meta) {
         if (!meta.success) {
           console.warn('Using LocalStorage patients fallback.');
           return fallbackPatients(params);
@@ -321,17 +341,19 @@ window.API = {
           _patientsTotal = all.length;
           _patientsCache = all.map(normalizePatient);
           setLocalData('patients', _patientsCache);
+          try { localStorage.setItem('hms_patients_total', String(_patientsTotal)); } catch (e) { }
           return { success: true, data: _patientsCache };
         }
 
         var total = meta.total || 0;
+        _patientsTotal = total;
+        try { localStorage.setItem('hms_patients_total', String(_patientsTotal)); } catch (e) { }
         if (total === 0) {
           _patientsTotal = 0;
           _patientsCache = [];
           setLocalData('patients', []);
           return { success: true, data: [] };
         }
-        _patientsTotal = total;
 
         var firstBatchData = (meta.data || []).map(normalizePatient);
 
@@ -339,7 +361,7 @@ window.API = {
         if (firstBatchData.length >= total || total <= batchSize) {
           _patientsCache = firstBatchData;
           setLocalData('patients', firstBatchData);
-          return { success: true, data: firstBatchData };
+          return { success: true, data: firstBatchData, total: total };
         }
 
         // Step 2: fetch remaining pages sequentially with retry
@@ -354,7 +376,7 @@ window.API = {
           }
           var offset = idx * batchSize;
           var limit = Math.min(batchSize, total - offset);
-          return sheetsFetch({ action: 'getPatients', offset: offset, limit: limit }).then(function(resp) {
+          return sheetsFetch({ action: 'getPatients', offset: offset, limit: limit }).then(function (resp) {
             if (resp.success && resp.data) {
               allData = allData.concat(resp.data.map(normalizePatient));
               return loadPage(idx + 1);
@@ -374,30 +396,34 @@ window.API = {
     }
 
     // Store promise for dedup and clear when done
-    _patientsLoading = promise.then(function(r) { _patientsLoading = null; return r; }, function(e) { _patientsLoading = null; throw e; });
+    _patientsLoading = promise.then(function (r) { _patientsLoading = null; return r; }, function (e) { _patientsLoading = null; throw e; });
     return _patientsLoading;
   },
 
-  getPatient: function(id) {
-    return sheetsFetch({ action: 'getPatient', id: id }).then(function(resp) {
+  getTodayCount: function() {
+    return sheetsFetch({ action: 'getTodayCount' });
+  },
+
+  getPatient: function (id) {
+    return sheetsFetch({ action: 'getPatient', id: id }).then(function (resp) {
       if (resp.success && resp.data) {
         resp.data = normalizePatient(resp.data);
         return resp;
       } else {
         var local = getLocalData('patients') || seedLocalPatients();
-        var found = local.filter(function(p) { return String(p.id) === String(id); });
+        var found = local.filter(function (p) { return String(p.id) === String(id); });
         if (found.length > 0) return { success: true, data: found[0], fallback: true };
         return { success: false, error: 'Patient not found' };
       }
     });
   },
 
-  createPatient: function(data) {
+  createPatient: function (data) {
     var q = { action: 'createPatient' };
-    ['op_no','fname','lname','contact','gender','age','address','blood_group','department','patient_type','status','assigned_doctor','notes'].forEach(function(k) {
+    ['op_no', 'fname', 'lname', 'contact', 'gender', 'age', 'address', 'blood_group', 'department', 'patient_type', 'status', 'assigned_doctor', 'notes'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       var opNo = data.op_no || String(Date.now());
       if (resp.success) {
         if (!resp.data) {
@@ -407,7 +433,7 @@ window.API = {
       } else {
         var local = getLocalData('patients') || seedLocalPatients();
         var existing = {};
-        local.forEach(function(p) {
+        local.forEach(function (p) {
           var val = p.op_no || p.id || '';
           var num = parseInt(val, 10);
           if (!isNaN(num) && num > 0 && num < 1000000) existing[num] = true;
@@ -445,12 +471,12 @@ window.API = {
     });
   },
 
-  updatePatient: function(id, data) {
+  updatePatient: function (id, data) {
     var q = { action: 'updatePatient', id: id };
     for (var k in data) {
       if (data.hasOwnProperty(k) && k !== 'id') q[k] = data[k];
     }
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       if (resp.success) {
         if (!resp.data) {
           resp.data = Object.assign({ id: id, op_no: id }, data);
@@ -479,14 +505,14 @@ window.API = {
     });
   },
 
-  deletePatient: function(id) {
-    return sheetsFetch({ action: 'deletePatient', id: id }).then(function(resp) {
+  deletePatient: function (id) {
+    return sheetsFetch({ action: 'deletePatient', id: id }).then(function (resp) {
       if (resp.success) {
         return resp;
       } else {
         var local = getLocalData('patients') || seedLocalPatients();
         var originalLength = local.length;
-        local = local.filter(function(p) { return String(p.id) !== String(id) && String(p.op_no) !== String(id); });
+        local = local.filter(function (p) { return String(p.id) !== String(id) && String(p.op_no) !== String(id); });
         if (local.length < originalLength) {
           setLocalData('patients', local);
           return { success: true, fallback: true };
@@ -496,8 +522,8 @@ window.API = {
     });
   },
 
-  getAppointments: function() {
-    return sheetsFetch({ action: 'getAppointments' }).then(function(resp) {
+  getAppointments: function () {
+    return sheetsFetch({ action: 'getAppointments' }).then(function (resp) {
       if (resp.success && resp.data) {
         _appointmentsCache = resp.data;
         setLocalData('appointments', resp.data); // sync local storage
@@ -511,10 +537,10 @@ window.API = {
     });
   },
 
-  getAppointment: function(id) {
-    return window.API.getAppointments().then(function(resp) {
+  getAppointment: function (id) {
+    return window.API.getAppointments().then(function (resp) {
       if (resp.success && resp.data) {
-        var found = resp.data.filter(function(a) { return String(a.id) === String(id); });
+        var found = resp.data.filter(function (a) { return String(a.id) === String(id); });
         if (found.length > 0) return { success: true, data: found[0], fallback: resp.fallback || false };
         return { success: false, error: 'Appointment not found' };
       }
@@ -522,12 +548,12 @@ window.API = {
     });
   },
 
-  createAppointment: function(data) {
+  createAppointment: function (data) {
     var q = { action: 'createAppointment' };
-    ['patient_id','patient_name','name','age','patientAge','doctor_id','doctor','doctor_name','appointment_date','appointment_time','type','status','reason','complaint'].forEach(function(k) {
+    ['patient_id', 'patient_name', 'name', 'age', 'patientAge', 'doctor_id', 'doctor', 'doctor_name', 'appointment_date', 'appointment_time', 'type', 'status', 'reason', 'complaint'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       if (resp.success) {
         if (!resp.data) {
           resp.data = { id: 'A' + String(Date.now()).slice(-8), token: 1 };
@@ -538,7 +564,7 @@ window.API = {
       } else {
         var local = getLocalData('appointments') || seedLocalAppointments();
         var maxToken = 0;
-        local.forEach(function(a) {
+        local.forEach(function (a) {
           if (a.token > maxToken) maxToken = a.token;
         });
         var now = new Date();
@@ -552,7 +578,7 @@ window.API = {
           doctor_id: data.doctor_id || '',
           doctor_name: data.doctor || data.doctor_name || '',
           appointment_date: data.appointment_date || now.toISOString().split('T')[0],
-          appointment_time: data.appointment_time || now.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'}),
+          appointment_time: data.appointment_time || now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
           type: data.type || 'OPD',
           status: data.status || 'waiting',
           reason: data.reason || data.complaint || '',
@@ -565,12 +591,12 @@ window.API = {
     });
   },
 
-  updateAppointment: function(id, data) {
+  updateAppointment: function (id, data) {
     var q = { action: 'updateAppointment', id: id };
     for (var k in data) {
       if (data.hasOwnProperty(k)) q[k] = data[k];
     }
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       if (resp.success) {
         if (!resp.data) {
           resp.data = Object.assign({ id: id }, data);
@@ -599,14 +625,14 @@ window.API = {
     });
   },
 
-  deleteAppointment: function(id) {
-    return sheetsFetch({ action: 'deleteAppointment', id: id }).then(function(resp) {
+  deleteAppointment: function (id) {
+    return sheetsFetch({ action: 'deleteAppointment', id: id }).then(function (resp) {
       if (resp.success) {
         return resp;
       } else {
         var local = getLocalData('appointments') || seedLocalAppointments();
         var originalLength = local.length;
-        local = local.filter(function(a) { return String(a.id) !== String(id); });
+        local = local.filter(function (a) { return String(a.id) !== String(id); });
         if (local.length < originalLength) {
           setLocalData('appointments', local);
           return { success: true, fallback: true };
@@ -616,38 +642,40 @@ window.API = {
     });
   },
 
-  getDoctors: function() {
+  getDoctors: function () {
     if (_doctorsCache && (Date.now() - _doctorsCacheTime < DOCTORS_CACHE_TTL)) {
       return Promise.resolve({ success: true, data: _doctorsCache, cached: true });
     }
-    return sheetsFetch({ action: 'getDoctors' }).then(function(resp) {
+    return sheetsFetch({ action: 'getDoctors' }).then(function (resp) {
       if (resp.success && resp.data) {
         _saveDoctorsCache(resp.data);
         return resp;
       } else {
-        return { success: true, data: [
-          { id: 'D001', initials: 'RS', name: 'Dr. Rajesh Sharma', dept: 'Cardiology' },
-          { id: 'D002', initials: 'AP', name: 'Dr. Anita Patel', dept: 'Pediatrics' },
-          { id: 'D003', initials: 'SV', name: 'Dr. Sunil Verma', dept: 'Orthopedics' }
-        ], fallback: true };
+        return {
+          success: true, data: [
+            { id: 'D001', initials: 'RS', name: 'Dr. Rajesh Sharma', dept: 'Cardiology' },
+            { id: 'D002', initials: 'AP', name: 'Dr. Anita Patel', dept: 'Pediatrics' },
+            { id: 'D003', initials: 'SV', name: 'Dr. Sunil Verma', dept: 'Orthopedics' }
+          ], fallback: true
+        };
       }
     });
   },
 
-  getCachedDoctors: function() {
+  getCachedDoctors: function () {
     return (_doctorsCache && (Date.now() - _doctorsCacheTime < DOCTORS_CACHE_TTL)) ? _doctorsCache : null;
   },
 
-  createDoctor: function(data) {
+  createDoctor: function (data) {
     _clearDoctorsCache();
     var q = { action: 'createDoctor' };
-    ['name','initials','dept','phone','email','qualification','status'].forEach(function(k) {
+    ['name', 'initials', 'dept', 'phone', 'email', 'qualification', 'status'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
     return sheetsFetch(q);
   },
 
-  updateDoctor: function(id, data) {
+  updateDoctor: function (id, data) {
     _clearDoctorsCache();
     var q = { action: 'updateDoctor', id: id };
     for (var k in data) {
@@ -656,42 +684,44 @@ window.API = {
     return sheetsFetch(q);
   },
 
-  deleteDoctor: function(id) {
+  deleteDoctor: function (id) {
     _clearDoctorsCache();
     return sheetsFetch({ action: 'deleteDoctor', id: id });
   },
 
-  getDepartments: function() {
+  getDepartments: function () {
     if (_departmentsCache && (Date.now() - _departmentsCacheTime < DEPARTMENTS_CACHE_TTL)) {
       return Promise.resolve({ success: true, data: _departmentsCache, cached: true });
     }
-    return sheetsFetch({ action: 'getDepartments' }).then(function(resp) {
+    return sheetsFetch({ action: 'getDepartments' }).then(function (resp) {
       if (resp.success && resp.data) {
         _saveDepartmentsCache(resp.data);
         return resp;
       } else {
-        return { success: true, data: [
-          { id: 'DEP001', name: 'Cardiology', description: 'Heart and cardiovascular system', status: 'active' },
-          { id: 'DEP002', name: 'Pediatrics', description: 'Medical care for infants, children, and adolescents', status: 'active' },
-          { id: 'DEP003', name: 'Orthopedics', description: 'Musculoskeletal system', status: 'active' },
-          { id: 'DEP004', name: 'Oncology', description: 'Cancer diagnosis and treatment', status: 'active' },
-          { id: 'DEP005', name: 'Neurology', description: 'Nervous system disorders', status: 'active' },
-          { id: 'DEP006', name: 'General Surgery', description: 'Surgical procedures', status: 'active' }
-        ], fallback: true };
+        return {
+          success: true, data: [
+            { id: 'DEP001', name: 'Cardiology', description: 'Heart and cardiovascular system', status: 'active' },
+            { id: 'DEP002', name: 'Pediatrics', description: 'Medical care for infants, children, and adolescents', status: 'active' },
+            { id: 'DEP003', name: 'Orthopedics', description: 'Musculoskeletal system', status: 'active' },
+            { id: 'DEP004', name: 'Oncology', description: 'Cancer diagnosis and treatment', status: 'active' },
+            { id: 'DEP005', name: 'Neurology', description: 'Nervous system disorders', status: 'active' },
+            { id: 'DEP006', name: 'General Surgery', description: 'Surgical procedures', status: 'active' }
+          ], fallback: true
+        };
       }
     });
   },
 
-  createDepartment: function(data) {
+  createDepartment: function (data) {
     _clearDepartmentsCache();
     var q = { action: 'createDepartment' };
-    ['name','description','status'].forEach(function(k) {
+    ['name', 'description', 'status'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
     return sheetsFetch(q);
   },
 
-  updateDepartment: function(id, data) {
+  updateDepartment: function (id, data) {
     _clearDepartmentsCache();
     var q = { action: 'updateDepartment', id: id };
     for (var k in data) {
@@ -700,13 +730,13 @@ window.API = {
     return sheetsFetch(q);
   },
 
-  deleteDepartment: function(id) {
+  deleteDepartment: function (id) {
     _clearDepartmentsCache();
     return sheetsFetch({ action: 'deleteDepartment', id: id });
   },
 
-  getSchedules: function() {
-    return sheetsFetch({ action: 'getDoctors' }).then(function(resp) {
+  getSchedules: function () {
+    return sheetsFetch({ action: 'getDoctors' }).then(function (resp) {
       if (resp.success && resp.data) {
         return resp;
       } else {
@@ -715,8 +745,8 @@ window.API = {
     });
   },
 
-  getMessages: function() {
-    return sheetsFetch({ action: 'getMessages' }).then(function(resp) {
+  getMessages: function () {
+    return sheetsFetch({ action: 'getMessages' }).then(function (resp) {
       if (resp.success && resp.data) {
         return resp;
       }
@@ -724,15 +754,15 @@ window.API = {
     });
   },
 
-  createMessage: function(data) {
+  createMessage: function (data) {
     var q = { action: 'createMessage' };
-    ['title','message','sender','status','target'].forEach(function(k) {
+    ['title', 'message', 'sender', 'status', 'target'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
     return sheetsFetch(q);
   },
 
-  deleteMessage: function(id) {
+  deleteMessage: function (id) {
     return sheetsFetch({ action: 'deleteMessage', id: id });
   },
 
@@ -740,7 +770,7 @@ window.API = {
 
   _skinPatientsCache: null,
 
-  normalizeSkinPatient: function(p) {
+  normalizeSkinPatient: function (p) {
     p.id = p['Skin ID'] || p.skin_id || '';
     p.skin_id = p.id;
     p.patient_name = p['Patient Name'] || p.patient_name || '';
@@ -754,8 +784,8 @@ window.API = {
     return p;
   },
 
-  getSkinPatients: function() {
-    return sheetsFetch({ action: 'getSkinPatients' }).then(function(resp) {
+  getSkinPatients: function () {
+    return sheetsFetch({ action: 'getSkinPatients' }).then(function (resp) {
       if (resp.success && resp.data) {
         resp.data = resp.data.map(window.API.normalizeSkinPatient);
         window.API._skinPatientsCache = resp.data;
@@ -769,25 +799,25 @@ window.API = {
     });
   },
 
-  getSkinPatient: function(id) {
-    return sheetsFetch({ action: 'getSkinPatient', id: id }).then(function(resp) {
+  getSkinPatient: function (id) {
+    return sheetsFetch({ action: 'getSkinPatient', id: id }).then(function (resp) {
       if (resp.success && resp.data) {
         resp.data = window.API.normalizeSkinPatient(resp.data);
         return resp;
       }
       var local = getLocalData('skinPatients') || [];
-      var found = local.filter(function(p) { return String(p['Skin ID'] || p.skin_id || p.id) === String(id); });
+      var found = local.filter(function (p) { return String(p['Skin ID'] || p.skin_id || p.id) === String(id); });
       if (found.length > 0) return { success: true, data: window.API.normalizeSkinPatient(found[0]), fallback: true };
       return { success: false, error: 'Skin patient not found' };
     });
   },
 
-  createSkinPatient: function(data) {
+  createSkinPatient: function (data) {
     var q = { action: 'createSkinPatient' };
-    ['skin_id','patient_name','age','gender','contact','place','notes'].forEach(function(k) {
+    ['skin_id', 'patient_name', 'age', 'gender', 'contact', 'place', 'notes'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       var skinId = data.skin_id || String(Date.now());
       if (resp.success) {
         if (!resp.data) {
@@ -820,12 +850,12 @@ window.API = {
     });
   },
 
-  updateSkinPatient: function(id, data) {
+  updateSkinPatient: function (id, data) {
     var q = { action: 'updateSkinPatient', id: id };
     for (var k in data) {
       if (data.hasOwnProperty(k)) q[k] = data[k];
     }
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       if (resp.success) {
         if (!resp.data) {
           resp.data = Object.assign({ id: id, skin_id: id }, data);
@@ -851,14 +881,14 @@ window.API = {
     });
   },
 
-  deleteSkinPatient: function(id) {
-    return sheetsFetch({ action: 'deleteSkinPatient', id: id }).then(function(resp) {
+  deleteSkinPatient: function (id) {
+    return sheetsFetch({ action: 'deleteSkinPatient', id: id }).then(function (resp) {
       if (resp.success) {
         return resp;
       }
       var local = getLocalData('skinPatients') || [];
       var originalLength = local.length;
-      local = local.filter(function(p) {
+      local = local.filter(function (p) {
         var pid = p['Skin ID'] || p.skin_id || p.id || '';
         return String(pid) !== String(id);
       });
@@ -874,7 +904,7 @@ window.API = {
 
   _orthopedicPatientsCache: null,
 
-  normalizeOrthopedicPatient: function(p) {
+  normalizeOrthopedicPatient: function (p) {
     p.id = p['Ortho ID'] || p.ortho_id || '';
     p.ortho_id = p.id;
     p.patient_name = p['Patient Name'] || p.patient_name || '';
@@ -892,8 +922,8 @@ window.API = {
     return p;
   },
 
-  getOrthopedicPatients: function() {
-    return sheetsFetch({ action: 'getOrthopedicPatients' }).then(function(resp) {
+  getOrthopedicPatients: function () {
+    return sheetsFetch({ action: 'getOrthopedicPatients' }).then(function (resp) {
       if (resp.success && resp.data) {
         resp.data = resp.data.map(window.API.normalizeOrthopedicPatient);
         window.API._orthopedicPatientsCache = resp.data;
@@ -907,25 +937,25 @@ window.API = {
     });
   },
 
-  getOrthopedicPatient: function(id) {
-    return sheetsFetch({ action: 'getOrthopedicPatient', id: id }).then(function(resp) {
+  getOrthopedicPatient: function (id) {
+    return sheetsFetch({ action: 'getOrthopedicPatient', id: id }).then(function (resp) {
       if (resp.success && resp.data) {
         resp.data = window.API.normalizeOrthopedicPatient(resp.data);
         return resp;
       }
       var local = getLocalData('orthopedicPatients') || [];
-      var found = local.filter(function(p) { return String(p['Ortho ID'] || p.ortho_id || p.id) === String(id); });
+      var found = local.filter(function (p) { return String(p['Ortho ID'] || p.ortho_id || p.id) === String(id); });
       if (found.length > 0) return { success: true, data: window.API.normalizeOrthopedicPatient(found[0]), fallback: true };
       return { success: false, error: 'Orthopedic patient not found' };
     });
   },
 
-  createOrthopedicPatient: function(data) {
+  createOrthopedicPatient: function (data) {
     var q = { action: 'createOrthopedicPatient' };
-    ['ortho_id','patient_name','age','gender','contact','diagnosis','body_part','side','condition_type','severity','treatment','notes'].forEach(function(k) {
+    ['ortho_id', 'patient_name', 'age', 'gender', 'contact', 'diagnosis', 'body_part', 'side', 'condition_type', 'severity', 'treatment', 'notes'].forEach(function (k) {
       if (data[k]) q[k] = data[k];
     });
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       var orthoId = data.ortho_id || String(Date.now());
       if (resp.success) {
         if (!resp.data) {
@@ -956,12 +986,12 @@ window.API = {
     });
   },
 
-  updateOrthopedicPatient: function(id, data) {
+  updateOrthopedicPatient: function (id, data) {
     var q = { action: 'updateOrthopedicPatient', id: id };
     for (var k in data) {
       if (data.hasOwnProperty(k)) q[k] = data[k];
     }
-    return sheetsFetch(q).then(function(resp) {
+    return sheetsFetch(q).then(function (resp) {
       if (resp.success) {
         if (!resp.data) {
           resp.data = Object.assign({ id: id, ortho_id: id }, data);
@@ -987,14 +1017,14 @@ window.API = {
     });
   },
 
-  deleteOrthopedicPatient: function(id) {
-    return sheetsFetch({ action: 'deleteOrthopedicPatient', id: id }).then(function(resp) {
+  deleteOrthopedicPatient: function (id) {
+    return sheetsFetch({ action: 'deleteOrthopedicPatient', id: id }).then(function (resp) {
       if (resp.success) {
         return resp;
       }
       var local = getLocalData('orthopedicPatients') || [];
       var originalLength = local.length;
-      local = local.filter(function(p) {
+      local = local.filter(function (p) {
         var pid = p['Ortho ID'] || p.ortho_id || p.id || '';
         return String(pid) !== String(id);
       });

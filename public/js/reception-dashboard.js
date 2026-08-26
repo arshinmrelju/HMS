@@ -252,44 +252,31 @@ function renderOpdRecords() {
       }
 
       /* --- "NEW" tag: shown if the patient was registered today --- */
-      var todayStr = new Date().toISOString().slice(0, 10);
       var isNew = false;
 
-      // 1. Explicit flag set at registration time (most reliable — covers skin/ortho/general new patients)
+      // 1. Explicit flag set at registration time
       if (p._isNew === true) {
         isNew = true;
       }
 
-      // 2. Cross-check allPatients.created_on — works for general OPD patients already in the list
+      // 2. Cross-check all registries with robust isToday check
       if (!isNew) {
-        var patientLookup = window.allPatients || [];
+        var patientLookup = (window.allPatients || []).concat(window.allSkinPatients || []).concat(window.allOrthoPatients || []);
+        var recId = String(p.op_no || p.patient_id || p.id || '').trim().toLowerCase();
+        var recName = String(p.name || '').trim().toLowerCase();
+        var recContact = String(p.contact || '').replace(/\s/g, '');
+
         var matchedPatient = patientLookup.find(function(pt) {
-          var ptId = String(pt.op_no || pt.id || '');
-          var recId = String(p.op_no || p.patient_id || p.id || '');
-          return ptId && ptId !== '' && recId && recId !== '' && ptId === recId;
+          var ptId = String(pt.op_no || pt.skin_id || pt.ortho_id || pt.id || '').trim().toLowerCase();
+          if (ptId && recId && ptId === recId) return true;
+          if (recName && patientFullName(pt).toLowerCase() === recName) return true;
+          if (recContact && patientContact(pt).replace(/\s/g, '') === recContact) return true;
+          return false;
         });
-        // Fallback: match by full name
-        if (!matchedPatient && p.name) {
-          matchedPatient = patientLookup.find(function(pt) {
-            return patientFullName(pt).toLowerCase() === String(p.name).toLowerCase().trim();
-          });
-        }
-        // Fallback: match by contact
-        if (!matchedPatient && p.contact) {
-          matchedPatient = patientLookup.find(function(pt) {
-            return patientContact(pt).replace(/\s/g, '') === String(p.contact).replace(/\s/g, '');
-          });
-        }
+
         if (matchedPatient) {
-          var createdOn = String(matchedPatient.created_on || matchedPatient['Created On'] || '').trim();
-          if (createdOn) {
-            if (/^\d{4}-\d{2}-\d{2}/.test(createdOn)) {
-              isNew = createdOn.slice(0, 10) === todayStr;
-            } else {
-              var dt = new Date(createdOn);
-              if (!isNaN(dt.getTime())) isNew = dt.toISOString().slice(0, 10) === todayStr;
-            }
-          }
+          var createdOn = matchedPatient.created_on || matchedPatient['Created On'] || matchedPatient.createdAt || '';
+          isNew = isToday(createdOn);
         }
       }
 
@@ -620,24 +607,83 @@ async function loadOpdRecords() {
   }
 }
 
-async function ensurePatientsLoaded() {
-  if (window.allPatients && window.allPatients.length > 0) return;
-  try {
-    var result = await window.API.getPatients();
-    if (result && result.data) {
-      var data = typeof normalizePatients === 'function'
-        ? normalizePatients(result.data)
-        : result.data;
-      if (Array.isArray(window.allPatients)) {
-        window.allPatients.length = 0;
-        data.forEach(function(item) { window.allPatients.push(item); });
-      } else {
-        window.allPatients = data;
-      }
-    }
-  } catch (e) {
-    console.warn('Could not load patients:', e);
+function isToday(dateVal) {
+  if (!dateVal) return false;
+  var now = new Date();
+  var currentYear = now.getFullYear();
+  var currentMonth = now.getMonth();
+  var currentDate = now.getDate();
+
+  if (dateVal instanceof Date) {
+    return dateVal.getFullYear() === currentYear &&
+           dateVal.getMonth() === currentMonth &&
+           dateVal.getDate() === currentDate;
   }
+  var s = String(dateVal).trim();
+  if (!s || s.length < 8) return false;
+
+  // YYYY-MM-DD or YYYY/MM/DD or YYYY-MM-DDTHH:mm:ss
+  var matchYmd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (matchYmd) {
+    var y = parseInt(matchYmd[1], 10);
+    var m = parseInt(matchYmd[2], 10) - 1;
+    var d = parseInt(matchYmd[3], 10);
+    return y === currentYear && m === currentMonth && d === currentDate;
+  }
+
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  var matchDmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (matchDmy) {
+    var d = parseInt(matchDmy[1], 10);
+    var m = parseInt(matchDmy[2], 10) - 1;
+    var y = parseInt(matchDmy[3], 10);
+    return y === currentYear && m === currentMonth && d === currentDate;
+  }
+
+  var parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.getFullYear() === currentYear &&
+           parsed.getMonth() === currentMonth &&
+           parsed.getDate() === currentDate;
+  }
+  return false;
+}
+window.isToday = isToday;
+
+async function ensurePatientsLoaded() {
+  var pPatients = (!window.allPatients || window.allPatients.length === 0)
+    ? window.API.getPatients().then(function(result) {
+        if (result && result.data) {
+          var data = typeof normalizePatients === 'function'
+            ? normalizePatients(result.data)
+            : result.data;
+          if (Array.isArray(window.allPatients)) {
+            window.allPatients.length = 0;
+            data.forEach(function(item) { window.allPatients.push(item); });
+          } else {
+            window.allPatients = data;
+          }
+        }
+      }).catch(function(e) { console.warn('Could not load patients:', e); })
+    : Promise.resolve();
+
+  var pSkin = (!window.allSkinPatients || window.allSkinPatients.length === 0)
+    ? window.API.getSkinPatients().then(function(result) {
+        if (result && result.data) {
+          window.allSkinPatients = result.data;
+        }
+      }).catch(function() {})
+    : Promise.resolve();
+
+  var pOrtho = (!window.allOrthoPatients || window.allOrthoPatients.length === 0)
+    ? window.API.getOrthopedicPatients().then(function(result) {
+        if (result && result.data) {
+          window.allOrthoPatients = result.data;
+        }
+      }).catch(function() {})
+    : Promise.resolve();
+
+  await Promise.all([pPatients, pSkin, pOrtho]);
 }
 
 /* --- Daily OPD count storage (local) --- */
@@ -665,22 +711,27 @@ function setRegDailyCounts(counts) {
 
 /* --- Update KPI Stat Cards --- */
 function updateStats() {
-  var todayStr = new Date().toISOString().split('T')[0];
-  var todayOPD = OPD_RECORDS.filter(function (p) { return p.timestamp && p.timestamp.slice(0, 10) === todayStr; });
+  var now = new Date();
+  var todayLocalStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
 
-  var opdTotalEl = document.querySelector('.stat-card[style*="--accent:#00685f"] .stat-value');
+  // OPD records for today
+  var todayOPD = OPD_RECORDS.filter(function (p) {
+    return isToday(p.timestamp || p.appointment_date || p.date);
+  });
+
+  var opdTotalEl = document.getElementById('kpiOpdToday') || document.querySelector('.stat-card[style*="--accent:#00685f"] .stat-value');
   if (opdTotalEl) {
     if (window.animateCounter) window.animateCounter(opdTotalEl, todayOPD.length);
     else opdTotalEl.textContent = todayOPD.length;
   }
 
   var counts = getDailyCounts();
-  counts[todayStr] = todayOPD.length;
+  counts[todayLocalStr] = todayOPD.length;
   setDailyCounts(counts);
 
   var yesterdayStr = getYesterdayStr();
   var yesterdayCount = counts[yesterdayStr];
-  var opdDelta = document.querySelector('.stat-card[style*="--accent:#00685f"] .stat-delta');
+  var opdDelta = document.getElementById('kpiOpdDelta') || document.querySelector('.stat-card[style*="--accent:#00685f"] .stat-delta');
   if (opdDelta) {
     if (yesterdayCount !== undefined && yesterdayCount !== null) {
       var diff = todayOPD.length - yesterdayCount;
@@ -696,51 +747,80 @@ function updateStats() {
   }
 
   /* --- New Registrations Today --- */
-  function filterToday(patients) {
-    return (patients || []).filter(function (p) {
-      var d = p.created_on || p['Created On'] || '';
-      if (!d) return false;
-      d = String(d).trim();
-      if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10) === todayStr;
-      var dt = new Date(d);
-      if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10) === todayStr;
-      return false;
-    });
-  }
-  var todayRegs = filterToday(window.allPatients).length + filterToday(window.allSkinPatients).length + filterToday(window.allOrthoPatients).length;
-  var regEl = document.querySelector('.stat-card[style*="--accent:#0D9488"] .stat-value');
+  var seenIds = {};
+  var todayRegCount = 0;
+
+  // Count newly registered patients in today's OPD consults
+  (todayOPD || []).forEach(function (r) {
+    var isNew = false;
+    if (r._isNew === true) {
+      isNew = true;
+    } else {
+      var patientLookup = window.allPatients || [];
+      var recId = String(r.op_no || r.patient_id || r.id || '').trim().toLowerCase();
+      var recName = String(r.name || '').trim().toLowerCase();
+      var recContact = String(r.contact || '').replace(/\s/g, '');
+
+      var matchedPatient = patientLookup.find(function(pt) {
+        var ptId = String(pt.op_no || pt.id || '').trim().toLowerCase();
+        if (ptId && recId && ptId === recId) return true;
+        if (recName && patientFullName(pt).toLowerCase() === recName) return true;
+        if (recContact && patientContact(pt).replace(/\s/g, '') === recContact) return true;
+        return false;
+      });
+
+      if (matchedPatient) {
+        var createdOn = matchedPatient.created_on || matchedPatient['Created On'] || matchedPatient.createdAt || '';
+        isNew = isToday(createdOn);
+      }
+    }
+
+    if (isNew) {
+      var id = String(r.op_no || r.patient_id || r.id || r.name || '').trim().toLowerCase();
+      if (id && !seenIds[id]) {
+        seenIds[id] = true;
+        todayRegCount++;
+      }
+    }
+  });
+
+  var todayRegs = todayRegCount;
+
+  var regEl = document.getElementById('kpiRegToday') || document.querySelector('.stat-card[style*="--accent:#0D9488"] .stat-value');
   if (regEl) {
     if (window.animateCounter) window.animateCounter(regEl, todayRegs);
     else regEl.textContent = todayRegs;
   }
   var regCounts = getRegDailyCounts();
-  regCounts[todayStr] = todayRegs;
+  regCounts[todayLocalStr] = todayRegs;
   setRegDailyCounts(regCounts);
   var regYesterday = regCounts[getYesterdayStr()];
-  var regDelta = document.querySelector('.stat-card[style*="--accent:#0D9488"] .stat-delta');
+  var regDelta = document.getElementById('kpiRegDelta') || document.querySelector('.stat-card[style*="--accent:#0D9488"] .stat-delta');
   if (regDelta) {
     if (regYesterday !== undefined && regYesterday !== null) {
       var regDiff = todayRegs - regYesterday;
       var regIcon = regDiff >= 0 ? 'trending_up' : 'trending_down';
       var regCls = regDiff >= 0 ? 'positive' : 'negative';
-      var regSign = regDiff >= 0 ? '+' : '';
+      var sign = regDiff >= 0 ? '+' : '';
       regDelta.className = 'stat-delta ' + regCls;
-      regDelta.innerHTML = '<span class="material-icons-round">' + regIcon + '</span>' + regSign + regDiff + ' vs yesterday';
+      regDelta.innerHTML = '<span class="material-icons-round">' + regIcon + '</span>' + sign + regDiff + ' vs yesterday';
     } else {
       regDelta.className = 'stat-delta';
       regDelta.innerHTML = '<span class="material-icons-round">show_chart</span>No prior data';
     }
   }
 
-  var todayApptsEl = document.querySelector('.stat-card[style*="--accent:#004d46"] .stat-value');
+  var todayApptsEl = document.getElementById('kpiApptsToday') || document.querySelector('.stat-card[style*="--accent:#004d46"] .stat-value');
   if (todayApptsEl) {
     window.API.getAppointments().then(function (resp) {
       if (resp && resp.data) {
-        var todayCount = resp.data.filter(function (a) { return a.appointment_date && a.appointment_date.slice(0, 10) === todayStr; }).length;
+        var todayCount = resp.data.filter(function (a) {
+          return isToday(a.appointment_date || a.createdAt || a.date);
+        }).length;
         if (window.animateCounter) window.animateCounter(todayApptsEl, todayCount);
         else todayApptsEl.textContent = todayCount;
 
-        var apptDelta = document.querySelector('.stat-card[style*="--accent:#004d46"] .stat-delta');
+        var apptDelta = document.getElementById('kpiApptsDelta') || document.querySelector('.stat-card[style*="--accent:#004d46"] .stat-delta');
         if (apptDelta) apptDelta.innerHTML = '<span class="material-icons-round">event</span>' + todayCount + ' today';
       }
     }).catch(function () { });

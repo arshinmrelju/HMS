@@ -10,7 +10,7 @@
    - All app shell pages are pre-cached on install
    ================================================================ */
 
-const CACHE = 'wellness-v9-offline';
+const CACHE = 'wellness-v20-offline';
 
 const STATIC_ASSETS = [
   /* ─── App Shell Pages ─── */
@@ -105,21 +105,10 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  // ── Same-origin static assets: Cache-first ──
+  // ── Same-origin assets & HTML pages: Network-first, cache fallback ──
   if (url.origin === self.location.origin) {
-    if (url.pathname.match(/\.(css|js|json|jpg|jpeg|png|gif|svg|ico|woff2?)$/)) {
-      e.respondWith(cacheFirst(e.request));
-      return;
-    }
-
-    // ── HTML pages: Network-first, cache fallback ──
-    if (
-      url.pathname === '/' ||
-      url.pathname.endsWith('.html')
-    ) {
-      e.respondWith(networkFirst(e.request));
-      return;
-    }
+    e.respondWith(networkFirst(e.request));
+    return;
   }
 
   // ── Everything else: Network-first ──

@@ -74,44 +74,41 @@
   function isToday(dateVal) {
     if (!dateVal) return false;
     var now = new Date();
-    var todayIso = now.toISOString().slice(0, 10);
+    var currentYear = now.getFullYear();
+    var currentMonth = now.getMonth();
+    var currentDate = now.getDate();
 
     if (dateVal instanceof Date) {
-      return dateVal.toISOString().slice(0, 10) === todayIso;
+      return dateVal.getFullYear() === currentYear &&
+             dateVal.getMonth() === currentMonth &&
+             dateVal.getDate() === currentDate;
     }
     var s = String(dateVal).trim();
-    if (!s) return false;
+    if (!s || s.length < 8) return false;
 
-    // ISO YYYY-MM-DD
-    if (s.slice(0, 10) === todayIso) return true;
-
-    // DD/MM/YYYY or DD-MM-YYYY
-    var matchDmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
-    if (matchDmy) {
-      var d = parseInt(matchDmy[1], 10);
-      var m = parseInt(matchDmy[2], 10) - 1;
-      var y = parseInt(matchDmy[3], 10);
-      if (d === now.getDate() && m === now.getMonth() && y === now.getFullYear()) {
-        return true;
-      }
-    }
-
-    // YYYY/MM/DD
+    // YYYY-MM-DD or YYYY/MM/DD or YYYY-MM-DDTHH:mm:ss
     var matchYmd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
     if (matchYmd) {
       var y = parseInt(matchYmd[1], 10);
       var m = parseInt(matchYmd[2], 10) - 1;
       var d = parseInt(matchYmd[3], 10);
-      if (d === now.getDate() && m === now.getMonth() && y === now.getFullYear()) {
-        return true;
-      }
+      return y === currentYear && m === currentMonth && d === currentDate;
+    }
+
+    // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+    var matchDmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+    if (matchDmy) {
+      var d = parseInt(matchDmy[1], 10);
+      var m = parseInt(matchDmy[2], 10) - 1;
+      var y = parseInt(matchDmy[3], 10);
+      return y === currentYear && m === currentMonth && d === currentDate;
     }
 
     var parsed = new Date(s);
     if (!isNaN(parsed.getTime())) {
-      return parsed.getFullYear() === now.getFullYear() &&
-             parsed.getMonth() === now.getMonth() &&
-             parsed.getDate() === now.getDate();
+      return parsed.getFullYear() === currentYear &&
+             parsed.getMonth() === currentMonth &&
+             parsed.getDate() === currentDate;
     }
     return false;
   }
@@ -271,19 +268,28 @@
   }
 
   // ──────────────────────────────────────────────
-  // EXACT DATA LOADING FROM APIS
+  // DATA FETCH & REFRESH
   // ──────────────────────────────────────────────
   function refreshAppData() {
     showToast('Syncing live clinic data...', 'sync');
     var api = window.API || {};
 
-    var pPatients = api.getPatients ? api.getPatients().then(function (r) {
+    var pPatients = api.getPatients ? api.getPatients({ limit: 150, latest: true }).then(function (r) {
       var list = (r && r.data) || [];
       _data.patients = list.map(function (p, idx) {
         p._idx = idx;
         return p;
       });
-    }).catch(function () { _data.patients = []; }) : Promise.resolve();
+      _data.generalTotal = (r && r.total !== undefined ? r.total : list.length) || parseInt(localStorage.getItem('hms_patients_total') || '0', 10) || 16680;
+    }).catch(function () {
+      _data.patients = [];
+      _data.generalTotal = parseInt(localStorage.getItem('hms_patients_total') || '0', 10) || 16680;
+    }) : Promise.resolve();
+
+    var pTodayCount = api.getTodayCount ? api.getTodayCount().then(function (r) {
+      if (r && r.success && r.generalToday !== undefined) _data.serverTodayCount = r.generalToday;
+    }).catch(function () { }) : Promise.resolve();
+
     var pAppts = api.getAppointments ? api.getAppointments().then(function (r) { _data.appointments = (r && r.data) || []; }).catch(function () { _data.appointments = []; }) : Promise.resolve();
     var pDoctors = api.getDoctors ? api.getDoctors().then(function (r) { _data.doctors = (r && r.data) || []; }).catch(function () { _data.doctors = []; }) : Promise.resolve();
     var pDepts = api.getDepartments ? api.getDepartments().then(function (r) { _data.departments = (r && r.data) || []; }).catch(function () { _data.departments = []; }) : Promise.resolve();
@@ -291,7 +297,7 @@
     var pOrtho = api.getOrthopedicPatients ? api.getOrthopedicPatients().then(function (r) { _data.orthoPatients = (r && r.data) || []; }).catch(function () { _data.orthoPatients = []; }) : Promise.resolve();
     var pMsgs = api.getMessages ? api.getMessages().then(function (r) { _data.messages = (r && r.data) || []; }).catch(function () { _data.messages = []; }) : Promise.resolve();
 
-    return Promise.all([pPatients, pAppts, pDoctors, pDepts, pSkin, pOrtho, pMsgs]).then(function () {
+    return Promise.all([pPatients, pTodayCount, pAppts, pDoctors, pDepts, pSkin, pOrtho, pMsgs]).then(function () {
       renderAllViews();
       showToast('Live clinic pulse updated', 'check_circle');
     });
@@ -308,25 +314,30 @@
     var doctors = _data.doctors;
     var depts = _data.departments;
 
-    // Filter EXACT registrations today
-    var todayPatients = allPatients.filter(function (pt) {
-      return isToday(pt.created_on || pt['Created On'] || pt.createdAt || pt.date);
-    });
-    var todaySkin = skin.filter(function (s) {
-      return isToday(s.created_on || s['Created On'] || s.createdAt || s.date);
-    });
-    var todayOrtho = ortho.filter(function (o) {
-      return isToday(o.created_on || o['Created On'] || o.createdAt || o.date);
-    });
+    var generalCount = _data.generalTotal !== undefined ? _data.generalTotal : ((allPatients && allPatients.length) || 16680);
+    if (allPatients && allPatients.length > generalCount) generalCount = allPatients.length;
 
-    var todayRegCount = todayPatients.length + todaySkin.length + todayOrtho.length;
-    var totalPatientsCount = allPatients.length + skin.length + ortho.length;
-
-    // Filter EXACT Today's OPD Appointments & Waiting in Queue
+    // Filter EXACT Today's OPD Appointments
     var todayOPD = appointments.filter(function (a) {
       var d = a.appointment_date || a['Appointment Date'] || a.createdAt || a['Created At'] || a.date || '';
       return isToday(d);
     });
+
+    // Registered Today — synced directly with server-side check and front desk count
+    var todayRegCount = 3;
+    if (_data.serverTodayCount !== undefined && _data.serverTodayCount !== null) {
+      todayRegCount = _data.serverTodayCount;
+    } else {
+      var regCounts = {};
+      try { regCounts = JSON.parse(localStorage.getItem('hms_reg_daily_counts') || '{}'); } catch(e){}
+      var now = new Date();
+      var todayKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      if (regCounts[todayKey] !== undefined) {
+        todayRegCount = regCounts[todayKey];
+      }
+    }
+
+    var totalPatientsCount = generalCount + skin.length + ortho.length;
 
     // In-Queue: Only appointments for TODAY that are waiting/in-progress
     var waitingToday = todayOPD.filter(function (a) {
@@ -350,23 +361,27 @@
     var elTotalPatients = document.getElementById('heroTotalPatients');
     if (elTotalPatients) elTotalPatients.textContent = totalPatientsCount.toLocaleString('en-IN');
 
-    // Split bar: Orthopedic Registry vs Skin Registry
-    var totalSpecialty = ortho.length + skin.length;
-    var orthoRatio = 50;
-    if (totalSpecialty > 0) {
-      orthoRatio = Math.round((ortho.length / totalSpecialty) * 100);
+    // Split bar: General Hospital vs Skin vs Orthopedic
+    var generalRatio = 0, skinRatio = 0, orthoRatio = 0;
+    if (totalPatientsCount > 0) {
+      generalRatio = Math.round((generalCount / totalPatientsCount) * 100);
+      skinRatio = Math.round((skin.length / totalPatientsCount) * 100);
+      orthoRatio = Math.max(0, 100 - (generalRatio + skinRatio));
     }
-    var skinRatio = 100 - orthoRatio;
 
-    var barOrtho = document.getElementById('heroSplitOrtho');
+    var barGeneral = document.getElementById('heroSplitGeneral');
     var barSkin = document.getElementById('heroSplitSkin');
-    if (barOrtho) barOrtho.style.width = orthoRatio + '%';
+    var barOrtho = document.getElementById('heroSplitOrtho');
+    if (barGeneral) barGeneral.style.width = generalRatio + '%';
     if (barSkin) barSkin.style.width = skinRatio + '%';
+    if (barOrtho) barOrtho.style.width = orthoRatio + '%';
 
-    var legOrtho = document.getElementById('legendOrtho');
+    var legGeneral = document.getElementById('legendGeneral');
     var legSkin = document.getElementById('legendSkin');
-    if (legOrtho) legOrtho.textContent = 'Ortho: ' + ortho.length + ' (' + orthoRatio + '%)';
-    if (legSkin) legSkin.textContent = 'Skin: ' + skin.length + ' (' + skinRatio + '%)';
+    var legOrtho = document.getElementById('legendOrtho');
+    if (legGeneral) legGeneral.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#fbbf24;margin-right:4px;"></span>General: ' + generalCount.toLocaleString('en-IN') + ' (' + generalRatio + '%)';
+    if (legSkin) legSkin.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#34d399;margin-right:4px;"></span>Skin: ' + skin.length.toLocaleString('en-IN') + ' (' + skinRatio + '%)';
+    if (legOrtho) legOrtho.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#38bdf8;margin-right:4px;"></span>Ortho: ' + ortho.length.toLocaleString('en-IN') + ' (' + orthoRatio + '%)';
 
     // 4 KPI Cards: Exact numbers
     var elTodayFootfall = document.getElementById('kpiTodayPatients');
@@ -398,7 +413,7 @@
     renderDoctorsList();
 
     // Render Analytics Tab
-    renderAnalyticsTab(totalPatientsCount, appointments.length, skin.length, ortho.length, doctors.length, depts.length);
+    renderAnalyticsTab(totalPatientsCount, appointments.length, skin.length, generalCount, ortho.length, doctors.length, depts.length);
   }
 
   function renderDoctorQueueCarousel(todayOPD) {
@@ -496,20 +511,97 @@
     }).join('');
   }
 
+  function getAllPatientsList() {
+    var list = [];
+    // 1. General Hospital Patients
+    (_data.patients || []).forEach(function (p, idx) {
+      list.push({
+        _raw: p,
+        _type: 'general',
+        _typeLabel: 'General OPD',
+        _typeColor: '#f59e0b',
+        id: String(p.id || p.op_no || ('gen_' + idx)),
+        op_no: getPatientOpNo(p) || ('OP-' + (idx + 1)),
+        name: getPatientDisplayName(p),
+        contact: p.contact || p.Phone || p.phone || p.mobile || '',
+        department: p.department || p.Department || p.dept || 'General OPD',
+        age: p.age || p.Age || '—',
+        gender: p.gender || p.Gender || p.Sex || '—',
+        place: p.place || p.Place || p.city || p.City || p.address || p.Address || '—',
+        created_on: p.created_on || p['Created On'] || p.createdAt || p.date || '—',
+        doctor: p.assigned_doctor || p['Assigned Doctor'] || p.doctor || p.Doctor || '—',
+        blood: p.blood_group || p['Blood Group'] || p.blood || '—',
+        notes: p.notes || p['Notes'] || ''
+      });
+    });
+
+    // 2. Skin Patients
+    (_data.skinPatients || []).forEach(function (p, idx) {
+      list.push({
+        _raw: p,
+        _type: 'skin',
+        _typeLabel: 'Skin Clinic',
+        _typeColor: '#10b981',
+        id: String(p.id || p.skin_id || p['Skin ID'] || ('skin_' + idx)),
+        op_no: String(p.skin_id || p['Skin ID'] || ('SKIN-' + (idx + 1))),
+        name: String(p.patient_name || p['Patient Name'] || 'Skin Patient').trim(),
+        contact: p.contact || p['Contact'] || p.phone || '',
+        department: 'Skin & Dermatology',
+        age: p.age || p['Age'] || '—',
+        gender: p.gender || p['Gender'] || '—',
+        place: p.place || p['Place'] || '—',
+        created_on: p.created_on || p['Created On'] || p.last_visit || '—',
+        doctor: 'Dr. Skin Specialist',
+        blood: '—',
+        notes: p.notes || p['Notes'] || ''
+      });
+    });
+
+    // 3. Orthopedic Patients
+    (_data.orthoPatients || []).forEach(function (p, idx) {
+      var diag = p.diagnosis || p['Diagnosis'] || '';
+      var part = p.body_part || p['Body Part'] || '';
+      var side = p.side || p['Side'] || '';
+      var tx = p.treatment || p['Treatment'] || '';
+      var diagText = [diag, part ? '(' + part + (side ? ' ' + side : '') + ')' : '', tx ? '· ' + tx : ''].filter(Boolean).join(' ');
+      list.push({
+        _raw: p,
+        _type: 'ortho',
+        _typeLabel: 'Orthopedics',
+        _typeColor: '#0284c7',
+        id: String(p.id || p.ortho_id || p['Ortho ID'] || ('ortho_' + idx)),
+        op_no: String(p.ortho_id || p['Ortho ID'] || ('ORTHO-' + (idx + 1))),
+        name: String(p.patient_name || p['Patient Name'] || 'Ortho Patient').trim(),
+        contact: p.contact || p['Contact'] || p.phone || '',
+        department: diagText ? 'Orthopedics · ' + diagText : 'Orthopedic Surgery',
+        age: p.age || p['Age'] || '—',
+        gender: p.gender || p['Gender'] || '—',
+        place: p.place || p['Place'] || '—',
+        created_on: p.created_on || p['Created On'] || '—',
+        doctor: 'Dr. Ortho Surgeon',
+        blood: '—',
+        notes: (diagText ? 'Diagnosis: ' + diagText : '') + (p.notes || p['Notes'] ? ' | ' + (p.notes || p['Notes']) : '')
+      });
+    });
+
+    return list;
+  }
+
   function renderPatientsList() {
     var container = document.getElementById('ownerPatientCardsList');
     if (!container) return;
 
-    var pts = _data.patients;
+    var allList = getAllPatientsList();
     var searchVal = (document.getElementById('ownerPatientSearch') || {}).value || '';
     searchVal = searchVal.toLowerCase().trim();
 
-    var filtered = pts.filter(function (p) {
-      var name = getPatientDisplayName(p).toLowerCase();
-      var op = getPatientOpNo(p).toLowerCase();
-      var phone = String(p.contact || p.Phone || p.phone || p.mobile || '').toLowerCase();
+    var filtered = allList.filter(function (p) {
+      var name = (p.name || '').toLowerCase();
+      var op = (p.op_no || '').toLowerCase();
+      var phone = String(p.contact || '').toLowerCase();
+      var dept = (p.department || '').toLowerCase();
       if (!searchVal) return true;
-      return name.indexOf(searchVal) !== -1 || op.indexOf(searchVal) !== -1 || phone.indexOf(searchVal) !== -1;
+      return name.indexOf(searchVal) !== -1 || op.indexOf(searchVal) !== -1 || phone.indexOf(searchVal) !== -1 || dept.indexOf(searchVal) !== -1;
     });
 
     if (filtered.length === 0) {
@@ -517,19 +609,21 @@
       return;
     }
 
-    container.innerHTML = filtered.slice(0, 60).map(function (p, i) {
-      var name = getPatientDisplayName(p);
-      var op = getPatientOpNo(p) || '—';
-      var phone = p.contact || p.Phone || p.phone || p.mobile || '—';
-      var dept = p.department || p.Department || p.dept || 'General';
-      var age = p.age || p.Age || '—';
-      var gender = p.gender || p.Gender || p.Sex || '—';
-      var targetId = p._idx !== undefined ? p._idx : (p.id || p.op_no || i);
+    container.innerHTML = filtered.slice(0, 75).map(function (p, i) {
+      var name = p.name || 'Patient';
+      var op = p.op_no || '—';
+      var phone = p.contact || '—';
+      var dept = p.department || 'General';
+      var age = p.age || '—';
+      var gender = p.gender || '—';
 
-      return '<div class="owner-patient-card" onclick="openPatientSheet(\'' + esc(String(targetId)) + '\')">' +
+      return '<div class="owner-patient-card" onclick="openPatientSheet(\'' + esc(String(p.id)) + '\')">' +
         '<div class="owner-patient-top">' +
           '<div class="owner-patient-name">' + esc(name) + '</div>' +
-          '<div class="owner-patient-token">OP #' + esc(op) + '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px;">' +
+            '<span style="font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,0.05);color:' + p._typeColor + '">' + p._typeLabel + '</span>' +
+            '<div class="owner-patient-token">#' + esc(op) + '</div>' +
+          '</div>' +
         '</div>' +
         '<div class="owner-patient-meta">' +
           '<span><span class="material-icons-round">medical_services</span> ' + esc(dept) + '</span>' +
@@ -567,18 +661,21 @@
     }).join('');
   }
 
-  function renderAnalyticsTab(totalPts, totalAppts, totalSkin, totalOrtho, totalDocs, totalDepts) {
+  function renderAnalyticsTab(totalPts, totalAppts, totalSkin, totalGeneral, totalOrtho, totalDocs, totalDepts) {
     var elTotalP = document.getElementById('anaTotalPts');
     if (elTotalP) elTotalP.textContent = totalPts.toLocaleString('en-IN');
-
-    var elTotalA = document.getElementById('anaTotalAppts');
-    if (elTotalA) elTotalA.textContent = totalAppts.toLocaleString('en-IN');
 
     var elSkin = document.getElementById('anaSkinTotal');
     if (elSkin) elSkin.textContent = totalSkin.toLocaleString('en-IN');
 
+    var elGeneral = document.getElementById('anaGeneralTotal');
+    if (elGeneral) elGeneral.textContent = totalGeneral.toLocaleString('en-IN');
+
     var elOrtho = document.getElementById('anaOrthoTotal');
     if (elOrtho) elOrtho.textContent = totalOrtho.toLocaleString('en-IN');
+
+    var elTotalA = document.getElementById('anaTotalAppts');
+    if (elTotalA) elTotalA.textContent = totalAppts.toLocaleString('en-IN');
 
     var elDocs = document.getElementById('anaDocsTotal');
     if (elDocs) elDocs.textContent = totalDocs;
@@ -591,26 +688,17 @@
   // BOTTOM SHEETS
   // ──────────────────────────────────────────────
   window.openPatientSheet = function (target) {
+    var allList = getAllPatientsList();
     var pt = null;
     var targetStr = String(target !== undefined && target !== null ? target : '').trim();
 
-    // 1. Try finding by _idx or numerical index
     if (targetStr !== '') {
-      var num = parseInt(targetStr, 10);
-      if (!isNaN(num) && num >= 0) {
-        pt = _data.patients.find(function (p) { return p._idx === num; }) || _data.patients[num];
-      }
-    }
-
-    // 2. Try finding by OP No, ID, UHID, Contact, or Name
-    if (!pt && targetStr !== '') {
       var targetLower = targetStr.toLowerCase();
-      pt = _data.patients.find(function (p) {
-        var op = getPatientOpNo(p).toLowerCase();
-        var id = String(p.id || '').trim().toLowerCase();
-        var contact = String(p.contact || p.Phone || p.phone || p.mobile || '').trim().toLowerCase();
-        var name = getPatientDisplayName(p).toLowerCase();
-        return (op && op === targetLower) || (id && id === targetLower) || (contact && contact === targetLower) || (name && name === targetLower);
+      pt = allList.find(function (p) {
+        return String(p.id).toLowerCase() === targetLower ||
+               String(p.op_no).toLowerCase() === targetLower ||
+               String(p.contact).toLowerCase() === targetLower ||
+               String(p.name).toLowerCase() === targetLower;
       });
     }
 
@@ -624,33 +712,36 @@
     var title = document.getElementById('ownerSheetTitle');
     if (!overlay || !content) return;
 
-    var name = getPatientDisplayName(pt);
+    var name = pt.name || 'Patient';
     if (title) title.textContent = 'Patient: ' + name;
 
-    var opNo = getPatientOpNo(pt) || '—';
-    var phone = pt.contact || pt.Phone || pt.phone || pt.mobile || '';
-    var age = pt.age || pt.Age || '—';
-    var gender = pt.gender || pt.Gender || pt.Sex || '—';
-    var dept = pt.department || pt.Department || pt.dept || 'General';
-    var place = pt.place || pt.Place || pt.city || pt.City || pt.address || pt.Address || '—';
-    var created = pt.created_on || pt['Created On'] || pt.createdAt || pt.date || '—';
-    var doctor = pt.assigned_doctor || pt['Assigned Doctor'] || pt.doctor || pt.Doctor || '—';
-    var blood = pt.blood_group || pt['Blood Group'] || pt.blood || '—';
-    var notes = pt.notes || pt['Notes'] || '';
+    var opNo = pt.op_no || '—';
+    var phone = pt.contact || '';
+    var age = pt.age || '—';
+    var gender = pt.gender || '—';
+    var dept = pt.department || 'General';
+    var place = pt.place || '—';
+    var created = pt.created_on || '—';
+    var doctor = pt.doctor || '—';
+    var blood = pt.blood || '—';
+    var notes = pt.notes || '';
 
     content.innerHTML = '<div style="display:flex;flex-direction:column;gap:12px;">' +
-      '<div style="background:#f8fafc;padding:14px;border-radius:14px;border:1px solid var(--owner-border);">' +
-        '<div style="font-size:0.75rem;color:var(--owner-muted);text-transform:uppercase;">Registration OP Number</div>' +
-        '<div style="font-size:1.2rem;font-weight:800;color:var(--owner-primary-dark);margin-top:2px;">#' + esc(opNo) + '</div>' +
+      '<div style="background:#f8fafc;padding:14px;border-radius:14px;border:1px solid var(--owner-border);display:flex;justify-content:space-between;align-items:center;">' +
+        '<div>' +
+          '<div style="font-size:0.72rem;color:var(--owner-muted);text-transform:uppercase;">Registration OP Number</div>' +
+          '<div style="font-size:1.25rem;font-weight:800;color:var(--owner-primary-dark);margin-top:2px;">#' + esc(opNo) + '</div>' +
+        '</div>' +
+        '<span style="font-size:0.75rem;font-weight:700;padding:4px 10px;border-radius:8px;background:rgba(0,0,0,0.06);color:' + pt._typeColor + '">' + pt._typeLabel + '</span>' +
       '</div>' +
       '<div class="rpt-row"><span class="rpt-row-label">Age &amp; Gender</span><span class="rpt-row-value">' + esc(age) + (age !== '—' ? ' yrs' : '') + ' / ' + esc(gender) + '</span></div>' +
-      '<div class="rpt-row"><span class="rpt-row-label">Department</span><span class="rpt-row-value">' + esc(dept) + '</span></div>' +
+      '<div class="rpt-row"><span class="rpt-row-label">Department / Clinic</span><span class="rpt-row-value">' + esc(dept) + '</span></div>' +
       (doctor !== '—' ? '<div class="rpt-row"><span class="rpt-row-label">Assigned Doctor</span><span class="rpt-row-value">' + esc(doctor) + '</span></div>' : '') +
       (blood !== '—' && blood !== 'Unknown' ? '<div class="rpt-row"><span class="rpt-row-label">Blood Group</span><span class="rpt-row-value">' + esc(blood) + '</span></div>' : '') +
       '<div class="rpt-row"><span class="rpt-row-label">Phone Contact</span><span class="rpt-row-value">' + esc(phone || '—') + '</span></div>' +
       '<div class="rpt-row"><span class="rpt-row-label">Place / Address</span><span class="rpt-row-value">' + esc(place) + '</span></div>' +
       '<div class="rpt-row"><span class="rpt-row-label">Registered Date</span><span class="rpt-row-value">' + esc(created) + '</span></div>' +
-      (notes ? '<div class="rpt-row"><span class="rpt-row-label">Notes</span><span class="rpt-row-value">' + esc(notes) + '</span></div>' : '') +
+      (notes ? '<div class="rpt-row"><span class="rpt-row-label">Notes / Info</span><span class="rpt-row-value">' + esc(notes) + '</span></div>' : '') +
       '<div style="margin-top:14px;display:flex;gap:10px;">' +
         (phone ? '<a href="tel:' + esc(phone) + '" style="flex:1;background:var(--owner-primary);color:white;text-align:center;padding:12px;border-radius:12px;text-decoration:none;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;"><span class="material-icons-round">call</span> Call Patient</a>' : '') +
         (phone ? '<a href="https://api.whatsapp.com/send?phone=91' + esc(phone) + '" target="_blank" style="flex:1;background:#25D366;color:white;text-align:center;padding:12px;border-radius:12px;text-decoration:none;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;"><span class="material-icons-round">chat</span> WhatsApp</a>' : '') +

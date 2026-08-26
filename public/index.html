@@ -514,24 +514,24 @@
           <div class="stat-icon-wrap"><span class="material-icons-round">groups</span></div>
           <div class="stat-body">
             <p class="stat-label">OPD Patients Today</p>
-            <h2 class="stat-value counter" data-target="0">0</h2>
-            <p class="stat-delta positive"><span class="material-icons-round">trending_up</span>+12 vs yesterday</p>
+            <h2 class="stat-value counter" id="kpiOpdToday" data-target="0">0</h2>
+            <p class="stat-delta positive" id="kpiOpdDelta"><span class="material-icons-round">trending_up</span>vs yesterday</p>
           </div>
         </div>
         <div class="stat-card" style="--accent:#0D9488">
           <div class="stat-icon-wrap"><span class="material-icons-round">person_add</span></div>
           <div class="stat-body">
             <p class="stat-label">New Registrations Today</p>
-            <h2 class="stat-value counter" data-target="0">0</h2>
-            <p class="stat-delta"><span class="material-icons-round">trending_up</span>vs yesterday</p>
+            <h2 class="stat-value counter" id="kpiRegToday" data-target="0">0</h2>
+            <p class="stat-delta" id="kpiRegDelta"><span class="material-icons-round">trending_up</span>vs yesterday</p>
           </div>
         </div>
         <div class="stat-card" style="--accent:#004d46">
           <div class="stat-icon-wrap"><span class="material-icons-round">event_available</span></div>
           <div class="stat-body">
             <p class="stat-label">Today's Appointments</p>
-            <h2 class="stat-value counter" data-target="0">0</h2>
-            <p class="stat-delta positive"><span class="material-icons-round">check_circle</span>8 yet to arrive</p>
+            <h2 class="stat-value counter" id="kpiApptsToday" data-target="0">0</h2>
+            <p class="stat-delta positive" id="kpiApptsDelta"><span class="material-icons-round">check_circle</span>today</p>
           </div>
         </div>
       </div>
@@ -1534,7 +1534,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
   <script src="js/firebase-init.js?v=3"></script>
   <script src="js/app.js?v=3"></script>
-  <script src="js/reception-dashboard.js?v=4"></script>
+  <script src="js/reception-dashboard.js?v=8"></script>
   <script src="js/patients.js?v=3"></script>
   <script src="js/skin.js?v=10"></script>
   <script src="js/ortho.js?v=1"></script>

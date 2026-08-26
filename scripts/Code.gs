@@ -8,6 +8,7 @@ function doGet(e) {
   var result = { success: false, error: 'Unknown action: ' + action };
 
   if (action === 'getPatients') result = handleGetPatients(e);
+  else if (action === 'getTodayCount') result = handleGetTodayCount(e);
   else if (action === 'getPatient') result = handleGetPatient(e);
   else if (action === 'getAppointments') result = handleGetAppointments(e);
   else if (action === 'getDoctors') result = handleGetDoctors(e);
@@ -172,7 +173,17 @@ function handleGetPatients(e) {
     p.op_no = opFromNotes || (isValidOpNo(rawId) ? rawId : '') || (isValidOpNo(rawUhid) ? rawUhid : '') || '';
     p.id = p.op_no;
     p.last_visit      = colLastVis  >= 0 ? String(r[colLastVis]  || '') : '';
-    p.created_on      = colCreated  >= 0 ? String(r[colCreated]  || '') : '';
+    // Use Utilities.formatDate so Date cells always yield 'yyyy-MM-dd' strings
+    if (colCreated >= 0) {
+      var rawCreated = r[colCreated];
+      if (rawCreated instanceof Date && !isNaN(rawCreated.getTime())) {
+        p.created_on = Utilities.formatDate(rawCreated, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      } else {
+        p.created_on = String(rawCreated || '');
+      }
+    } else {
+      p.created_on = '';
+    }
 
     if (search) {
       var haystack = (p.fname + ' ' + p.lname + ' ' + p.contact + ' ' + p.op_no).toLowerCase();
@@ -183,6 +194,40 @@ function handleGetPatients(e) {
   }
 
   return { success: true, data: result, total: totalRows };
+}
+
+/* Count patients registered today (IST) — fast server-side check */
+function handleGetTodayCount(e) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName('Patients') || ss.getSheets()[0];
+  var tz = Session.getScriptTimeZone();
+  var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var colCreated = headers.indexOf('Created On');
+  if (colCreated < 0) return { success: true, generalToday: 0, todayStr: todayStr };
+
+  var totalRows = sheet.getLastRow() - 1;
+  if (totalRows <= 0) return { success: true, generalToday: 0, todayStr: todayStr };
+
+  // Only scan the last 200 rows (today's new patients are always at the bottom)
+  var scanRows = Math.min(200, totalRows);
+  var startRow = totalRows - scanRows + 2; // +2: 1-indexed + skip header
+  var rawData = sheet.getRange(startRow, colCreated + 1, scanRows, 1).getValues();
+
+  var count = 0;
+  for (var i = 0; i < rawData.length; i++) {
+    var val = rawData[i][0];
+    var dateStr;
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      dateStr = Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+    } else {
+      dateStr = String(val || '').slice(0, 10);
+    }
+    if (dateStr === todayStr) count++;
+  }
+
+  return { success: true, generalToday: count, todayStr: todayStr };
 }
 
 function handleGetPatient(e) {
@@ -446,11 +491,18 @@ function sheetToObjects(sheet) {
   var rows = sheet.getDataRange().getValues();
   if (!rows || rows.length < 2) return [];
   var headers = rows[0];
+  var tz = Session.getScriptTimeZone();
   var result = [];
   for (var i = 1; i < rows.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = rows[i][j];
+      var val = rows[i][j];
+      // Convert Date objects to yyyy-MM-dd strings using the script timezone
+      if (val instanceof Date && !isNaN(val.getTime())) {
+        obj[headers[j]] = Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+      } else {
+        obj[headers[j]] = val;
+      }
     }
     result.push(obj);
   }

@@ -147,12 +147,14 @@
           <div class="owner-hero-revenue-sub">Synced live from Google Sheets &amp; Registries</div>
         </div>
         <div class="owner-hero-split-bar">
-          <div class="owner-split-ortho" id="heroSplitOrtho" style="width:50%;"></div>
-          <div class="owner-split-skin" id="heroSplitSkin" style="width:50%;"></div>
+          <div class="owner-split-skin" id="heroSplitSkin" style="width:79%;"></div>
+          <div class="owner-split-general" id="heroSplitGeneral" style="width:13%;"></div>
+          <div class="owner-split-ortho" id="heroSplitOrtho" style="width:8%;"></div>
         </div>
         <div class="owner-hero-split-legend">
-          <span id="legendOrtho">Ortho: 0 (50%)</span>
-          <span id="legendSkin">Skin: 0 (50%)</span>
+          <span id="legendSkin">Skin: 0 (0%)</span>
+          <span id="legendGeneral">General: 0 (0%)</span>
+          <span id="legendOrtho">Ortho: 0 (0%)</span>
         </div>
       </div>
 
@@ -321,14 +323,16 @@
         </div>
 
         <div class="owner-kpi-card" style="margin-bottom:14px;">
-          <div class="rpt-row"><span class="rpt-row-label">Total Registered Patients</span><span class="rpt-row-value"
+          <div class="rpt-row"><span class="rpt-row-label">Total System Patients</span><span class="rpt-row-value"
               id="anaTotalPts">0</span></div>
-          <div class="rpt-row"><span class="rpt-row-label">Total OPD Appointments</span><span class="rpt-row-value"
-              id="anaTotalAppts">0</span></div>
           <div class="rpt-row"><span class="rpt-row-label">Skin Clinic Registry</span><span class="rpt-row-value"
               id="anaSkinTotal">0</span></div>
+          <div class="rpt-row"><span class="rpt-row-label">General Hospital Registry</span><span class="rpt-row-value"
+              id="anaGeneralTotal">0</span></div>
           <div class="rpt-row"><span class="rpt-row-label">Orthopedic Registry</span><span class="rpt-row-value"
               id="anaOrthoTotal">0</span></div>
+          <div class="rpt-row"><span class="rpt-row-label">Total OPD Appointments</span><span class="rpt-row-value"
+              id="anaTotalAppts">0</span></div>
           <div class="rpt-row"><span class="rpt-row-label">Doctors on Staff</span><span class="rpt-row-value"
               id="anaDocsTotal">0</span></div>
           <div class="rpt-row"><span class="rpt-row-label">Departments Active</span><span class="rpt-row-value"
@@ -469,10 +473,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/sheets-api.js"></script>
-  <script src="js/firebase-init.js"></script>
-  <script src="js/pwa.js"></script>
-  <script src="js/owner-mobile.js"></script>
+  <script src="js/sheets-api.js?v=20"></script>
+  <script src="js/firebase-init.js?v=20"></script>
+  <script src="js/pwa.js?v=20"></script>
+  <script src="js/owner-mobile.js?v=20"></script>
 
 </body>
 
