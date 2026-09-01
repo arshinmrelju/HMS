@@ -149,6 +149,21 @@
     } else {
       if (pinModal) pinModal.classList.add('active');
     }
+
+    if (!window._pinKeyHandlerAttached) {
+      window._pinKeyHandlerAttached = true;
+      document.addEventListener('keydown', function (e) {
+        var modal = document.getElementById('ownerPinModal');
+        if (!modal || !modal.classList.contains('active')) return;
+        if (e.key >= '0' && e.key <= '9') {
+          window.handleKeyInput(e.key);
+        } else if (e.key === 'Backspace') {
+          window.handleKeyInput('backspace');
+        } else if (e.key === 'Escape') {
+          window.handleKeyInput('clear');
+        }
+      });
+    }
   }
 
   window.handleKeyInput = function (key) {
@@ -160,7 +175,7 @@
       _pinBuffer = _pinBuffer.slice(0, -1);
     } else if (key === 'clear') {
       _pinBuffer = '';
-    } else if (_pinBuffer.length < 6) {
+    } else if (_pinBuffer.length < 8) {
       _pinBuffer += key;
     }
 
@@ -172,8 +187,9 @@
       }
     });
 
-    var validPins = ['1234', '0000', '9999', '1111', '8888', 'WMPR001'];
-    if (validPins.indexOf(_pinBuffer) !== -1 || (_pinBuffer.length === 4 && (_pinBuffer === '1234' || _pinBuffer === '0000' || _pinBuffer === '9999' || _pinBuffer === '1111'))) {
+    var validPins = ['1234', '0000', '9999', '1111', '8888', 'WMPR001', 'WMP01', 'WMPAD01', 'WMPDEV01'];
+    var cleanPin = _pinBuffer.trim().toUpperCase();
+    if (validPins.indexOf(_pinBuffer) !== -1 || validPins.indexOf(cleanPin) !== -1) {
       localStorage.setItem('hms_auth', JSON.stringify({
         code: 'WMPR001',
         name: 'Owner',
@@ -186,8 +202,8 @@
         if (pinModal) pinModal.classList.remove('active');
         _pinBuffer = '';
         initApp();
-      }, 400);
-    } else if (_pinBuffer.length >= 4 && validPins.indexOf(_pinBuffer) === -1 && _pinBuffer.length >= 6) {
+      }, 300);
+    } else if (_pinBuffer.length >= 4 && validPins.indexOf(_pinBuffer) === -1 && validPins.indexOf(cleanPin) === -1) {
       if (errorEl) errorEl.textContent = 'Incorrect PIN. Please try again.';
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
       setTimeout(function () {

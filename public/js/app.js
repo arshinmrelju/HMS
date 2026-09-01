@@ -24,15 +24,23 @@ window.HMS = {
     return false;
   },
   login(code) {
-    if (code === 'WMP01') {
-      localStorage.setItem('hms_auth', JSON.stringify({
-        code: 'WMP01',
-        role: 'Reception',
-        timestamp: Date.now()
-      }));
-      if (window.logLoginEvent) {
-        window.logLoginEvent('Front Desk', 'Reception', 'reception');
-      }
+    var c = (code || '').trim().toUpperCase();
+    var authData = null;
+    if (c === 'WMP01') {
+      authData = { code: 'WMP01', role: 'Reception', timestamp: Date.now() };
+      if (window.logLoginEvent) window.logLoginEvent('Front Desk', 'Reception', 'reception');
+    } else if (c === 'WMPAD01') {
+      authData = { code: 'WMPAD01', name: 'Admin', role: 'Admin', timestamp: Date.now() };
+      if (window.logLoginEvent) window.logLoginEvent('Admin', 'Admin', 'admin');
+    } else if (c === 'WMPDEV01') {
+      authData = { code: 'WMPDEV01', name: 'Developer', role: 'Developer', timestamp: Date.now() };
+      if (window.logLoginEvent) window.logLoginEvent('Developer', 'Developer', 'developer');
+    } else if (c === 'WMPR001') {
+      authData = { code: 'WMPR001', name: 'Owner', role: 'Report', timestamp: Date.now() };
+      if (window.logLoginEvent) window.logLoginEvent('Owner', 'Report', 'report');
+    }
+    if (authData) {
+      localStorage.setItem('hms_auth', JSON.stringify(authData));
       return true;
     }
     return false;
@@ -75,9 +83,7 @@ function initLoginOverlay() {
 
   if (!form || !input) return;
 
-  form.onsubmit = function(e) {
-    e.preventDefault();
-    var code = input.value.trim();
+  function attemptLogin(code) {
     if (HMS.login(code)) {
       overlay.classList.remove('active');
       document.body.style.overflow = '';
@@ -85,7 +91,39 @@ function initLoginOverlay() {
       if (error) error.style.display = 'none';
       var auth = JSON.parse(localStorage.getItem('hms_auth'));
       showLoginSuccess(auth ? auth.role : '');
-    } else {
+      return true;
+    }
+    return false;
+  }
+
+  input.addEventListener('input', function() {
+    if (error) error.style.display = 'none';
+    var code = input.value.trim();
+    if (code.length >= 4) {
+      attemptLogin(code);
+    }
+  });
+
+  input.addEventListener('keyup', function() {
+    var code = input.value.trim();
+    if (code.length >= 4) {
+      attemptLogin(code);
+    }
+  });
+
+  input.addEventListener('paste', function() {
+    setTimeout(function() {
+      var code = input.value.trim();
+      if (code.length >= 4) {
+        attemptLogin(code);
+      }
+    }, 50);
+  });
+
+  form.onsubmit = function(e) {
+    e.preventDefault();
+    var code = input.value.trim();
+    if (!attemptLogin(code)) {
       if (error) {
         error.textContent = 'Invalid code. Please try again.';
         error.style.display = 'block';

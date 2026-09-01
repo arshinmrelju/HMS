@@ -14,13 +14,17 @@
 
   /* ─── Auth ─── */
   function adminLogin(code) {
-    if (code === 'WMPAD01') {
-      localStorage.setItem('hms_auth', JSON.stringify({
-        code: 'WMPAD01', name: 'Admin', role: 'Admin', timestamp: Date.now()
-      }));
-      if (window.logLoginEvent) {
-        window.logLoginEvent('Admin', 'Admin', 'admin');
-      }
+    var c = (code || '').trim().toUpperCase();
+    var authData = null;
+    if (c === 'WMPAD01') {
+      authData = { code: 'WMPAD01', name: 'Admin', role: 'Admin', timestamp: Date.now() };
+      if (window.logLoginEvent) window.logLoginEvent('Admin', 'Admin', 'admin');
+    } else if (c === 'WMPDEV01') {
+      authData = { code: 'WMPDEV01', name: 'Developer', role: 'Developer', timestamp: Date.now() };
+      if (window.logLoginEvent) window.logLoginEvent('Developer', 'Developer', 'developer');
+    }
+    if (authData) {
+      localStorage.setItem('hms_auth', JSON.stringify(authData));
       return true;
     }
     return false;
@@ -41,9 +45,8 @@
     var input = document.getElementById('loginCodeInput');
     var error = document.getElementById('loginError');
     if (!form || !input) return;
-    form.onsubmit = function(e) {
-      e.preventDefault();
-      var code = input.value.trim();
+
+    function attemptLogin(code) {
       if (adminLogin(code)) {
         overlay.classList.remove('active');
         document.body.style.overflow = '';
@@ -52,7 +55,39 @@
         var auth = JSON.parse(localStorage.getItem('hms_auth'));
         showLoginSuccess(auth ? auth.role : 'Admin');
         setTimeout(function() { initAdmin(); }, 2600);
-      } else {
+        return true;
+      }
+      return false;
+    }
+
+    input.addEventListener('input', function() {
+      if (error) error.style.display = 'none';
+      var code = input.value.trim();
+      if (code.length >= 4) {
+        attemptLogin(code);
+      }
+    });
+
+    input.addEventListener('keyup', function() {
+      var code = input.value.trim();
+      if (code.length >= 4) {
+        attemptLogin(code);
+      }
+    });
+
+    input.addEventListener('paste', function() {
+      setTimeout(function() {
+        var code = input.value.trim();
+        if (code.length >= 4) {
+          attemptLogin(code);
+        }
+      }, 50);
+    });
+
+    form.onsubmit = function(e) {
+      e.preventDefault();
+      var code = input.value.trim();
+      if (!attemptLogin(code)) {
         if (error) { error.textContent = 'Invalid code. Please try again.'; error.style.display = 'block'; }
         input.value = '';
         input.focus();

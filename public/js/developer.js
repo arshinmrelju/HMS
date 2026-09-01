@@ -44,7 +44,8 @@
 
   /* ─── Auth ─── */
   function devLogin(code) {
-    if (code === 'WMPDEV01') {
+    var c = (code || '').trim().toUpperCase();
+    if (c === 'WMPDEV01') {
       localStorage.setItem('hms_auth', JSON.stringify({
         code: 'WMPDEV01', name: 'Developer', role: 'Developer', timestamp: Date.now()
       }));
@@ -71,9 +72,8 @@
     var input = document.getElementById('loginCodeInput');
     var error = document.getElementById('loginError');
     if (!form || !input) return;
-    form.onsubmit = function(e) {
-      e.preventDefault();
-      var code = input.value.trim();
+
+    function attemptLogin(code) {
       if (devLogin(code)) {
         overlay.classList.remove('active');
         document.body.style.overflow = '';
@@ -82,7 +82,39 @@
         var auth = JSON.parse(localStorage.getItem('hms_auth'));
         showLoginSuccess(auth ? auth.role : 'Developer');
         setTimeout(function() { initDeveloper(); }, 2600);
-      } else {
+        return true;
+      }
+      return false;
+    }
+
+    input.addEventListener('input', function() {
+      if (error) error.style.display = 'none';
+      var code = input.value.trim();
+      if (code.length >= 4) {
+        attemptLogin(code);
+      }
+    });
+
+    input.addEventListener('keyup', function() {
+      var code = input.value.trim();
+      if (code.length >= 4) {
+        attemptLogin(code);
+      }
+    });
+
+    input.addEventListener('paste', function() {
+      setTimeout(function() {
+        var code = input.value.trim();
+        if (code.length >= 4) {
+          attemptLogin(code);
+        }
+      }, 50);
+    });
+
+    form.onsubmit = function(e) {
+      e.preventDefault();
+      var code = input.value.trim();
+      if (!attemptLogin(code)) {
         if (error) { error.textContent = 'Invalid code. Please try again.'; error.style.display = 'block'; }
         input.value = '';
         input.focus();
